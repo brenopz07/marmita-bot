@@ -286,17 +286,23 @@ async function callLLM(history) {
 // Implementação: OpenRouter (Suporta modelos gratuitos e de ponta com fallback automático)
 async function callOpenRouterAPI(apiKey, history) {
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+
+  // OpenRouter e modelos como Gemma/Nemotron exigem mensagens de usuário/assistente válidas
+  // Algumas rotas gratuitas rejeitam ou falham com "system" explícito isolado.
+  // Injetamos o SYSTEM_PROMPT de forma compatível universalmente:
+  const formattedMessages = [
+    { role: 'user', content: `[INSTRUÇÕES DO SISTEMA E CARDÁPIO]\n${SYSTEM_PROMPT}\n\n[RESPOSTA DO ATENDENTE]` },
+    { role: 'assistant', content: 'Entendido. Sou o atendente da Marmitaria Sabor Caseiro e seguirei rigorosamente todas as regras de cardápio, segurança e pedidos.' },
     ...history
   ];
 
-  // Lista de modelos gratuitos estáveis em ordem de tentativa
+  // Lista de modelos gratuitos ativos e testados no OpenRouter
   const freeCandidateModels = [
     'nvidia/nemotron-3.5-lightning:free',
-    'google/gemma-4-31b-it:free',
     'google/gemma-4-26b-a4b-it:free',
-    'baidu/ernie-5.5-flash-preview:free'
+    'google/gemma-4-31b-it:free',
+    'baidu/ernie-5.5-flash-preview:free',
+    'liquid/lfm-2.5-2.6b:free'
   ];
 
   let selected = appConfig.openrouterModel;
@@ -304,12 +310,11 @@ async function callOpenRouterAPI(apiKey, history) {
     selected = freeCandidateModels[0];
   }
 
-  // Se o modelo escolhido for um dos gratuitos, coloca os outros como fallback
   const modelsToTry = selected.endsWith(':free')
     ? [selected, ...freeCandidateModels.filter(m => m !== selected)]
     : [selected];
 
-  let lastError = null;
+  let lastErrorMessage = '';
 
   for (const currentModel of modelsToTry) {
     try {
@@ -317,38 +322,36 @@ async function callOpenRouterAPI(apiKey, history) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${apiKey.trim()}`,
           'HTTP-Referer': 'https://brenopz07.github.io/marmita-bot',
           'X-Title': 'Marmitaria Sabor Caseiro'
         },
         body: JSON.stringify({
           model: currentModel,
-          messages: messages,
-          temperature: 0.2,
+          messages: formattedMessages,
+          temperature: 0.3,
           max_tokens: 800
         })
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error?.message || `Erro ${res.status}`);
+        throw new Error(data.error?.message || `Status ${res.status}`);
       }
 
-      const data = await res.json();
       if (data.choices && data.choices[0] && data.choices[0].message) {
-        // Atualiza para o modelo que funcionou
-        appConfig.openrouterModel = currentModel;
-        localStorage.setItem('marmita_openrouter_model', currentModel);
         return data.choices[0].message.content;
+      } else {
+        throw new Error('Formato de resposta inesperado do provedor.');
       }
     } catch (err) {
-      console.warn(`Tentativa com ${currentModel} falhou:`, err.message);
-      lastError = err;
-      // Continua para o próximo modelo gratuito da lista
+      console.warn(`[OpenRouter] Falha com ${currentModel}:`, err.message);
+      lastErrorMessage = err.message;
     }
   }
 
-  throw new Error(lastError ? lastError.message : 'Falha na comunicação com os provedores gratuitos da OpenRouter.');
+  throw new Error(`OpenRouter (${lastErrorMessage}). Dica: se os servidores gratuitos da OpenRouter estiverem com alta fila agora, você pode usar uma chave instantânea e gratuita da Groq (console.groq.com/keys) selecionando Groq nas configurações.`);
 }
 
 // Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
