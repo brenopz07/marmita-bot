@@ -291,17 +291,24 @@ async function callOpenRouterAPI(apiKey, history) {
     ...history
   ];
 
+  // Garante que se vier qualquer resquício de modelo que não seja gratuito válido, força o gemma-4
+  let selectedModel = appConfig.openrouterModel;
+  if (!selectedModel || selectedModel.includes('llama') || selectedModel.includes('openrouter/free')) {
+    selectedModel = 'google/gemma-4-31b-it:free';
+    appConfig.openrouterModel = selectedModel;
+    localStorage.setItem('marmita_openrouter_model', selectedModel);
+  }
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
+      'HTTP-Referer': window.location.origin || 'https://brenopz07.github.io',
       'X-Title': 'Marmitaria Sabor Caseiro'
     },
     body: JSON.stringify({
-      // Modelo selecionado na interface do OpenRouter
-      model: appConfig.openrouterModel || 'google/gemma-4-31b-it:free',
+      model: selectedModel,
       messages: messages,
       temperature: 0.2,
       max_tokens: 800
