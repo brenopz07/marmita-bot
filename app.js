@@ -337,21 +337,26 @@ async function callOpenRouterAPI(apiKey, history) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error?.message || `Status ${res.status}`);
+        const errorDetail = data.error?.metadata?.raw || data.error?.message || `Status ${res.status}`;
+        throw new Error(errorDetail);
       }
 
-      if (data.choices && data.choices[0] && data.choices[0].message) {
+      if (data.error) {
+        throw new Error(data.error.message || 'Erro reportado pelo provedor');
+      }
+
+      if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         return data.choices[0].message.content;
       } else {
         throw new Error('Formato de resposta inesperado do provedor.');
       }
     } catch (err) {
       console.warn(`[OpenRouter] Falha com ${currentModel}:`, err.message);
-      lastErrorMessage = err.message;
+      lastErrorMessage = `${currentModel}: ${err.message}`;
     }
   }
 
-  throw new Error(`OpenRouter (${lastErrorMessage}). Dica: se os servidores gratuitos da OpenRouter estiverem com alta fila agora, você pode usar uma chave instantânea e gratuita da Groq (console.groq.com/keys) selecionando Groq nas configurações.`);
+  throw new Error(`${lastErrorMessage}`);
 }
 
 // Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
