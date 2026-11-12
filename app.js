@@ -60,7 +60,7 @@ let conversationHistory = [];
 let appConfig = {
   provider: localStorage.getItem('marmita_provider') || 'openrouter',
   apiKey: localStorage.getItem('marmita_api_key') || '',
-  openrouterModel: localStorage.getItem('marmita_openrouter_model') || 'meta-llama/llama-3.3-70b-instruct:free'
+  openrouterModel: localStorage.getItem('marmita_openrouter_model') || 'openrouter/free'
 };
 
 // ==========================================
@@ -295,7 +295,8 @@ async function callOpenRouterAPI(apiKey, history) {
     },
     body: JSON.stringify({
       // Modelo selecionado na interface do OpenRouter
-      model: appConfig.openrouterModel || 'meta-llama/llama-3.3-70b-instruct:free',
+      model: appConfig.openrouterModel || 'openrouter/free',
+      models: ['openrouter/free', 'google/gemma-2-9b-it:free', 'meta-llama/llama-3.1-8b-instruct:free'],
       messages: messages,
       temperature: 0.2,
       max_tokens: 800
