@@ -283,7 +283,7 @@ async function callLLM(history) {
   }
 }
 
-// Implementação: OpenRouter (Suporta modelos gratuitos e de ponta)
+// Implementação: OpenRouter (Suporta modelos gratuitos e de ponta com fallback automático)
 async function callOpenRouterAPI(apiKey, history) {
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   const messages = [
@@ -291,40 +291,64 @@ async function callOpenRouterAPI(apiKey, history) {
     ...history
   ];
 
-  // Garante que se vier qualquer resquício de modelo que não seja gratuito válido, força o gemma-4
-  let selectedModel = appConfig.openrouterModel;
-  if (!selectedModel || selectedModel.includes('llama') || selectedModel.includes('openrouter/free')) {
-    selectedModel = 'google/gemma-4-31b-it:free';
-    appConfig.openrouterModel = selectedModel;
-    localStorage.setItem('marmita_openrouter_model', selectedModel);
+  // Lista de modelos gratuitos estáveis em ordem de tentativa
+  const freeCandidateModels = [
+    'nvidia/nemotron-3.5-lightning:free',
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'baidu/ernie-5.5-flash-preview:free'
+  ];
+
+  let selected = appConfig.openrouterModel;
+  if (!selected || selected.includes('llama') || selected.includes('openrouter/free')) {
+    selected = freeCandidateModels[0];
   }
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin || 'https://brenopz07.github.io',
-      'X-Title': 'Marmitaria Sabor Caseiro'
-    },
-    body: JSON.stringify({
-      model: selectedModel,
-      messages: messages,
-      temperature: 0.2,
-      max_tokens: 800
-    })
-  });
+  // Se o modelo escolhido for um dos gratuitos, coloca os outros como fallback
+  const modelsToTry = selected.endsWith(':free')
+    ? [selected, ...freeCandidateModels.filter(m => m !== selected)]
+    : [selected];
 
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Erro ${res.status}: ${res.statusText}`);
+  let lastError = null;
+
+  for (const currentModel of modelsToTry) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://brenopz07.github.io/marmita-bot',
+          'X-Title': 'Marmitaria Sabor Caseiro'
+        },
+        body: JSON.stringify({
+          model: currentModel,
+          messages: messages,
+          temperature: 0.2,
+          max_tokens: 800
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `Erro ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        // Atualiza para o modelo que funcionou
+        appConfig.openrouterModel = currentModel;
+        localStorage.setItem('marmita_openrouter_model', currentModel);
+        return data.choices[0].message.content;
+      }
+    } catch (err) {
+      console.warn(`Tentativa com ${currentModel} falhou:`, err.message);
+      lastError = err;
+      // Continua para o próximo modelo gratuito da lista
+    }
   }
 
-  const data = await res.json();
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-    throw new Error('Resposta inesperada da OpenRouter.');
-  }
-  return data.choices[0].message.content;
+  throw new Error(lastError ? lastError.message : 'Falha na comunicação com os provedores gratuitos da OpenRouter.');
 }
 
 // Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
