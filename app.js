@@ -59,7 +59,8 @@ GUARDRAILS E DIRETRIZES DE SEGURANÇA (ESTRITAS):
 let conversationHistory = [];
 let appConfig = {
   provider: localStorage.getItem('marmita_provider') || 'openrouter',
-  apiKey: localStorage.getItem('marmita_api_key') || ''
+  apiKey: localStorage.getItem('marmita_api_key') || '',
+  openrouterModel: localStorage.getItem('marmita_openrouter_model') || 'meta-llama/llama-3.3-70b-instruct:free'
 };
 
 // ==========================================
@@ -75,6 +76,8 @@ const typingIndicator = document.getElementById('typing-indicator');
 const configBtn = document.getElementById('config-btn');
 const configModal = document.getElementById('config-modal');
 const providerSelect = document.getElementById('provider-select');
+const openrouterModelContainer = document.getElementById('openrouter-model-container');
+const openrouterModelSelect = document.getElementById('openrouter-model-select');
 const apiKeyInput = document.getElementById('api-key-input');
 const saveConfigBtn = document.getElementById('save-config-btn');
 const clearKeyBtn = document.getElementById('clear-key-btn');
@@ -84,7 +87,11 @@ const clearKeyBtn = document.getElementById('clear-key-btn');
 // ==========================================
 window.addEventListener('DOMContentLoaded', () => {
   providerSelect.value = appConfig.provider;
+  openrouterModelSelect.value = appConfig.openrouterModel;
   apiKeyInput.value = appConfig.apiKey;
+
+  toggleModelSelector();
+  providerSelect.addEventListener('change', toggleModelSelector);
 
   // Mensagem inicial do bot
   renderMessage(
@@ -107,6 +114,14 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+function toggleModelSelector() {
+  if (providerSelect.value === 'openrouter') {
+    openrouterModelContainer.style.display = 'block';
+  } else {
+    openrouterModelContainer.style.display = 'none';
+  }
+}
+
 // ==========================================
 // 5. EVENTOS DO CHAT E MODAL
 // ==========================================
@@ -114,9 +129,11 @@ configBtn.addEventListener('click', openConfigModal);
 
 saveConfigBtn.addEventListener('click', () => {
   appConfig.provider = providerSelect.value;
+  appConfig.openrouterModel = openrouterModelSelect.value;
   appConfig.apiKey = apiKeyInput.value.trim();
 
   localStorage.setItem('marmita_provider', appConfig.provider);
+  localStorage.setItem('marmita_openrouter_model', appConfig.openrouterModel);
   localStorage.setItem('marmita_api_key', appConfig.apiKey);
 
   closeConfigModal();
@@ -277,8 +294,8 @@ async function callOpenRouterAPI(apiKey, history) {
       'X-Title': 'Marmitaria Sabor Caseiro'
     },
     body: JSON.stringify({
-      // Modelo gratuito e de altíssima qualidade do OpenRouter:
-      model: 'meta-llama/llama-3.3-70b-instruct:free',
+      // Modelo selecionado na interface do OpenRouter
+      model: appConfig.openrouterModel || 'meta-llama/llama-3.3-70b-instruct:free',
       messages: messages,
       temperature: 0.2,
       max_tokens: 800
