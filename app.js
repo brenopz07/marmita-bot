@@ -292,8 +292,8 @@ async function callOpenRouterAPI(apiKey, history) {
     ...history
   ];
 
-  // Modelo selecionado pelo usuário ou padrão universal openrouter/auto
-  const targetModel = appConfig.openrouterModel || 'openrouter/auto';
+  // Modelo selecionado pelo usuário
+  const targetModel = appConfig.openrouterModel || 'openrouter/free';
 
   const res = await fetch(endpoint, {
     method: 'POST',
