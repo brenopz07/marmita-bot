@@ -58,9 +58,7 @@ GUARDRAILS E DIRETRIZES DE SEGURANÇA (ESTRITAS):
 // ==========================================
 let conversationHistory = [];
 let appConfig = {
-  provider: localStorage.getItem('marmita_provider') || 'openrouter',
-  apiKey: localStorage.getItem('marmita_api_key') || '',
-  openrouterModel: localStorage.getItem('marmita_openrouter_model') || 'google/gemma-4-31b-it:free'
+  apiKey: localStorage.getItem('marmita_api_key') || ''
 };
 
 // ==========================================
@@ -75,9 +73,6 @@ const typingIndicator = document.getElementById('typing-indicator');
 // Modal Elements
 const configBtn = document.getElementById('config-btn');
 const configModal = document.getElementById('config-modal');
-const providerSelect = document.getElementById('provider-select');
-const openrouterModelContainer = document.getElementById('openrouter-model-container');
-const openrouterModelSelect = document.getElementById('openrouter-model-select');
 const apiKeyInput = document.getElementById('api-key-input');
 const saveConfigBtn = document.getElementById('save-config-btn');
 const clearKeyBtn = document.getElementById('clear-key-btn');
@@ -86,18 +81,7 @@ const clearKeyBtn = document.getElementById('clear-key-btn');
 // 4. INICIALIZAÇÃO
 // ==========================================
 window.addEventListener('DOMContentLoaded', () => {
-  // Define openrouter/auto como padrão se estiver vazio ou com modelo obsoleto
-  if (!appConfig.openrouterModel || appConfig.openrouterModel.includes(':free') || appConfig.openrouterModel.includes('llama-3.3-70b-instruct:free')) {
-    appConfig.openrouterModel = 'openrouter/auto';
-    localStorage.setItem('marmita_openrouter_model', 'openrouter/auto');
-  }
-
-  providerSelect.value = appConfig.provider;
-  openrouterModelSelect.value = appConfig.openrouterModel;
   apiKeyInput.value = appConfig.apiKey;
-
-  toggleModelSelector();
-  providerSelect.addEventListener('change', toggleModelSelector);
 
   // Mensagem inicial do bot
   renderMessage(
@@ -120,31 +104,18 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-function toggleModelSelector() {
-  if (providerSelect.value === 'openrouter') {
-    openrouterModelContainer.style.display = 'block';
-  } else {
-    openrouterModelContainer.style.display = 'none';
-  }
-}
-
 // ==========================================
 // 5. EVENTOS DO CHAT E MODAL
 // ==========================================
 configBtn.addEventListener('click', openConfigModal);
 
 saveConfigBtn.addEventListener('click', () => {
-  appConfig.provider = providerSelect.value;
-  appConfig.openrouterModel = openrouterModelSelect.value;
   appConfig.apiKey = apiKeyInput.value.trim();
-
-  localStorage.setItem('marmita_provider', appConfig.provider);
-  localStorage.setItem('marmita_openrouter_model', appConfig.openrouterModel);
   localStorage.setItem('marmita_api_key', appConfig.apiKey);
 
   closeConfigModal();
   if (appConfig.apiKey) {
-    renderMessage('bot', '✅ Chave de API configurada com sucesso! O que gostaria de pedir?');
+    renderMessage('bot', '✅ Chave da OpenRouter configurada com sucesso! O que gostaria de pedir?');
   }
 });
 
@@ -264,27 +235,10 @@ function setLoading(isLoading) {
 }
 
 // ==========================================
-// 7. CHAMADA ÀS APIS DO LLM (CLIENT-SIDE)
+// 7. CHAMADA À API DA OPENROUTER (CLIENT-SIDE)
 // ==========================================
 async function callLLM(history) {
-  const provider = appConfig.provider;
-  const key = appConfig.apiKey;
-
-  if (provider === 'openrouter') {
-    return await callOpenRouterAPI(key, history);
-  } else if (provider === 'groq') {
-    return await callGroqAPI(key, history);
-  } else if (provider === 'gemini') {
-    return await callGeminiAPI(key, history);
-  } else if (provider === 'openai') {
-    return await callOpenAIAPI(key, history);
-  } else {
-    throw new Error('Provedor não suportado.');
-  }
-}
-
-// Implementação: OpenRouter (Suporta openrouter/auto, modelos padrão e free)
-async function callOpenRouterAPI(apiKey, history) {
+  const apiKey = appConfig.apiKey;
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
   const messages = [
@@ -292,9 +246,7 @@ async function callOpenRouterAPI(apiKey, history) {
     ...history
   ];
 
-  // Modelo selecionado pelo usuário
-  const targetModel = appConfig.openrouterModel || 'openrouter/free';
-
+  // Rota padrão do OpenRouter: tenta auto e depois rota gratuita se a conta não tiver créditos
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -304,7 +256,7 @@ async function callOpenRouterAPI(apiKey, history) {
       'X-Title': 'Marmitaria Sabor Caseiro'
     },
     body: JSON.stringify({
-      model: targetModel,
+      model: 'openrouter/free',
       messages: messages,
       temperature: 0.2,
       max_tokens: 800
@@ -314,7 +266,29 @@ async function callOpenRouterAPI(apiKey, history) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const errorMsg = data.error?.message || `Erro HTTP ${res.status}`;
+    // Se der qualquer erro com openrouter/free, tenta com openrouter/auto (caso a chave tenha créditos)
+    const fallbackRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'HTTP-Referer': 'https://brenopz07.github.io/marmita-bot',
+        'X-Title': 'Marmitaria Sabor Caseiro'
+      },
+      body: JSON.stringify({
+        model: 'openrouter/auto',
+        messages: messages,
+        temperature: 0.2,
+        max_tokens: 800
+      })
+    });
+
+    const fallbackData = await fallbackRes.json().catch(() => ({}));
+    if (fallbackRes.ok && fallbackData.choices && fallbackData.choices[0] && fallbackData.choices[0].message) {
+      return fallbackData.choices[0].message.content;
+    }
+
+    const errorMsg = data.error?.message || fallbackData.error?.message || `Erro HTTP ${res.status}`;
     throw new Error(errorMsg);
   }
 
@@ -323,104 +297,4 @@ async function callOpenRouterAPI(apiKey, history) {
   }
 
   throw new Error('Resposta sem conteúdo da OpenRouter.');
-}
-
-// Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
-async function callGroqAPI(apiKey, history) {
-  const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...history
-  ];
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: messages,
-      temperature: 0.2, // Baixa temperatura para manter consistência com preços e guardrails
-      max_tokens: 800
-    })
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Erro ${res.status}: ${res.statusText}`);
-  }
-
-  const data = await res.json();
-  return data.choices[0].message.content;
-}
-
-// Implementação: OpenAI (GPT-4o-mini)
-async function callOpenAIAPI(apiKey, history) {
-  const endpoint = 'https://api.openai.com/v1/chat/completions';
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...history
-  ];
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: messages,
-      temperature: 0.2,
-      max_tokens: 800
-    })
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Erro ${res.status}: ${res.statusText}`);
-  }
-
-  const data = await res.json();
-  return data.choices[0].message.content;
-}
-
-// Implementação: Google Gemini API (gemini-1.5-flash / gemini-2.0-flash)
-async function callGeminiAPI(apiKey, history) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-  // Converte formato de mensagens do padrão OpenAI para o padrão Gemini
-  const contents = history.map(item => ({
-    role: item.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: item.content }]
-  }));
-
-  const payload = {
-    system_instruction: {
-      parts: [{ text: SYSTEM_PROMPT }]
-    },
-    contents: contents,
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 800
-    }
-  };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Erro ${res.status}: ${res.statusText}`);
-  }
-
-  const data = await res.json();
-  return data.candidates[0].content.parts[0].text;
 }
