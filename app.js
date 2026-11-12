@@ -86,6 +86,12 @@ const clearKeyBtn = document.getElementById('clear-key-btn');
 // 4. INICIALIZAÇÃO
 // ==========================================
 window.addEventListener('DOMContentLoaded', () => {
+  // Limpa modelo obsoleto que possa ter ficado no localStorage do usuário
+  if (appConfig.openrouterModel && appConfig.openrouterModel.includes('llama-3.3-70b-instruct:free')) {
+    appConfig.openrouterModel = 'google/gemma-4-31b-it:free';
+    localStorage.setItem('marmita_openrouter_model', 'google/gemma-4-31b-it:free');
+  }
+
   providerSelect.value = appConfig.provider;
   openrouterModelSelect.value = appConfig.openrouterModel;
   apiKeyInput.value = appConfig.apiKey;
