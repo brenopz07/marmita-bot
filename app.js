@@ -58,7 +58,7 @@ GUARDRAILS E DIRETRIZES DE SEGURANÇA (ESTRITAS):
 // ==========================================
 let conversationHistory = [];
 let appConfig = {
-  provider: localStorage.getItem('marmita_provider') || 'groq',
+  provider: localStorage.getItem('marmita_provider') || 'openrouter',
   apiKey: localStorage.getItem('marmita_api_key') || ''
 };
 
@@ -247,7 +247,9 @@ async function callLLM(history) {
   const provider = appConfig.provider;
   const key = appConfig.apiKey;
 
-  if (provider === 'groq') {
+  if (provider === 'openrouter') {
+    return await callOpenRouterAPI(key, history);
+  } else if (provider === 'groq') {
     return await callGroqAPI(key, history);
   } else if (provider === 'gemini') {
     return await callGeminiAPI(key, history);
@@ -256,6 +258,43 @@ async function callLLM(history) {
   } else {
     throw new Error('Provedor não suportado.');
   }
+}
+
+// Implementação: OpenRouter (Suporta modelos gratuitos e de ponta)
+async function callOpenRouterAPI(apiKey, history) {
+  const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...history
+  ];
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': window.location.origin,
+      'X-Title': 'Marmitaria Sabor Caseiro'
+    },
+    body: JSON.stringify({
+      // Modelo gratuito e de altíssima qualidade do OpenRouter:
+      model: 'meta-llama/llama-3.3-70b-instruct:free',
+      messages: messages,
+      temperature: 0.2,
+      max_tokens: 800
+    })
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Erro ${res.status}: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    throw new Error('Resposta inesperada da OpenRouter.');
+  }
+  return data.choices[0].message.content;
 }
 
 // Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
