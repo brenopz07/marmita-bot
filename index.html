@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marmitaria Sabor Caseiro - Pedidos Online</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="chat-header">
+      <div class="brand-info">
+        <div class="avatar-container">
+          <span class="bot-avatar">🍱</span>
+          <span class="status-indicator online"></span>
+        </div>
+        <div>
+          <h1>Marmitaria Sabor Caseiro</h1>
+          <p class="subtitle">Atendente Virtual • Delivery Diário</p>
+        </div>
+      </div>
+      <button id="config-btn" class="icon-button" title="Configurar API Key">
+        ⚙️
+      </button>
+    </header>
+
+    <!-- Modal de Configuração de Chave de API -->
+    <div id="config-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Configuração da API Key</h2>
+        <p>Informe sua chave de API para habilitar o chatbot. A chave é salva apenas localmente no seu navegador (localStorage).</p>
+        
+        <label for="provider-select">Provedor:</label>
+        <select id="provider-select">
+          <option value="groq">Groq (Recomendado - Gratuito & Rápido - Llama 3)</option>
+          <option value="gemini">Google Gemini (Gemini 1.5 Flash)</option>
+          <option value="openai">OpenAI (GPT-4o-mini)</option>
+        </select>
+
+        <label for="api-key-input">API Key:</label>
+        <input type="password" id="api-key-input" placeholder="Cole sua API Key aqui...">
+
+        <div class="modal-actions">
+          <button id="clear-key-btn" class="secondary-btn">Remover Chave</button>
+          <button id="save-config-btn" class="primary-btn">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Info Banner do Cardápio -->
+    <div class="menu-banner">
+      <div class="banner-tag">🔔 Destaque do Dia:</div>
+      <div class="banner-items">
+        <span>Tradicional: <b>R$ 22,00</b></span> •
+        <span>Fit: <b>R$ 25,00</b></span> •
+        <span>Vegana: <b>R$ 24,00</b></span> •
+        <span>Executiva: <b>R$ 28,00</b></span> •
+        <span>Taxa de Entrega Fixa: <b>R$ 5,00</b></span>
+      </div>
+    </div>
+
+    <!-- Área de Mensagens -->
+    <main class="chat-messages" id="chat-messages">
+      <!-- Mensagens inseridas via JavaScript -->
+    </main>
+
+    <!-- Indicador de Digitação -->
+    <div id="typing-indicator" class="typing-indicator hidden">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <span>Atendente preparando resposta...</span>
+    </div>
+
+    <!-- Formulário de Envio -->
+    <footer class="chat-input-area">
+      <form id="chat-form">
+        <textarea 
+          id="user-input" 
+          rows="1" 
+          placeholder="Ex: Quero 1 Marmita Executiva com bife bem passado e sem cebola..."
+          required
+        ></textarea>
+        <button type="submit" id="send-btn" aria-label="Enviar mensagem">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </form>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
