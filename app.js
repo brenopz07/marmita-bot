@@ -86,10 +86,10 @@ const clearKeyBtn = document.getElementById('clear-key-btn');
 // 4. INICIALIZAÇÃO
 // ==========================================
 window.addEventListener('DOMContentLoaded', () => {
-  // Limpa modelo obsoleto que possa ter ficado no localStorage do usuário
-  if (appConfig.openrouterModel && appConfig.openrouterModel.includes('llama-3.3-70b-instruct:free')) {
-    appConfig.openrouterModel = 'google/gemma-4-31b-it:free';
-    localStorage.setItem('marmita_openrouter_model', 'google/gemma-4-31b-it:free');
+  // Define openrouter/auto como padrão se estiver vazio ou com modelo obsoleto
+  if (!appConfig.openrouterModel || appConfig.openrouterModel.includes(':free') || appConfig.openrouterModel.includes('llama-3.3-70b-instruct:free')) {
+    appConfig.openrouterModel = 'openrouter/auto';
+    localStorage.setItem('marmita_openrouter_model', 'openrouter/auto');
   }
 
   providerSelect.value = appConfig.provider;
@@ -283,80 +283,46 @@ async function callLLM(history) {
   }
 }
 
-// Implementação: OpenRouter (Suporta modelos gratuitos e de ponta com fallback automático)
+// Implementação: OpenRouter (Suporta openrouter/auto, modelos padrão e free)
 async function callOpenRouterAPI(apiKey, history) {
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
-  // OpenRouter e modelos como Gemma/Nemotron exigem mensagens de usuário/assistente válidas
-  // Algumas rotas gratuitas rejeitam ou falham com "system" explícito isolado.
-  // Injetamos o SYSTEM_PROMPT de forma compatível universalmente:
-  const formattedMessages = [
-    { role: 'user', content: `[INSTRUÇÕES DO SISTEMA E CARDÁPIO]\n${SYSTEM_PROMPT}\n\n[RESPOSTA DO ATENDENTE]` },
-    { role: 'assistant', content: 'Entendido. Sou o atendente da Marmitaria Sabor Caseiro e seguirei rigorosamente todas as regras de cardápio, segurança e pedidos.' },
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
     ...history
   ];
 
-  // Lista de modelos gratuitos ativos e testados no OpenRouter
-  const freeCandidateModels = [
-    'nvidia/nemotron-3.5-lightning:free',
-    'google/gemma-4-26b-a4b-it:free',
-    'google/gemma-4-31b-it:free',
-    'baidu/ernie-5.5-flash-preview:free',
-    'liquid/lfm-2.5-2.6b:free'
-  ];
+  // Modelo selecionado pelo usuário ou padrão universal openrouter/auto
+  const targetModel = appConfig.openrouterModel || 'openrouter/auto';
 
-  let selected = appConfig.openrouterModel;
-  if (!selected || selected.includes('llama') || selected.includes('openrouter/free')) {
-    selected = freeCandidateModels[0];
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`,
+      'HTTP-Referer': 'https://brenopz07.github.io/marmita-bot',
+      'X-Title': 'Marmitaria Sabor Caseiro'
+    },
+    body: JSON.stringify({
+      model: targetModel,
+      messages: messages,
+      temperature: 0.2,
+      max_tokens: 800
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const errorMsg = data.error?.message || `Erro HTTP ${res.status}`;
+    throw new Error(errorMsg);
   }
 
-  const modelsToTry = selected.endsWith(':free')
-    ? [selected, ...freeCandidateModels.filter(m => m !== selected)]
-    : [selected];
-
-  let lastErrorMessage = '';
-
-  for (const currentModel of modelsToTry) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey.trim()}`,
-          'HTTP-Referer': 'https://brenopz07.github.io/marmita-bot',
-          'X-Title': 'Marmitaria Sabor Caseiro'
-        },
-        body: JSON.stringify({
-          model: currentModel,
-          messages: formattedMessages,
-          temperature: 0.3,
-          max_tokens: 800
-        })
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const errorDetail = data.error?.metadata?.raw || data.error?.message || `Status ${res.status}`;
-        throw new Error(errorDetail);
-      }
-
-      if (data.error) {
-        throw new Error(data.error.message || 'Erro reportado pelo provedor');
-      }
-
-      if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-        return data.choices[0].message.content;
-      } else {
-        throw new Error('Formato de resposta inesperado do provedor.');
-      }
-    } catch (err) {
-      console.warn(`[OpenRouter] Falha com ${currentModel}:`, err.message);
-      lastErrorMessage = `${currentModel}: ${err.message}`;
-    }
+  if (data.choices && data.choices[0] && data.choices[0].message) {
+    return data.choices[0].message.content;
   }
 
-  throw new Error(`${lastErrorMessage}`);
+  throw new Error('Resposta sem conteúdo da OpenRouter.');
 }
 
 // Implementação: Groq (Llama 3 70B/8B - Alta velocidade e tier gratuito generoso)
