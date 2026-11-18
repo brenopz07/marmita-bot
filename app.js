@@ -12,15 +12,13 @@ const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const typingIndicator = document.getElementById('typing-indicator');
 
-// Modal Elements
-const configBtn = document.getElementById('config-btn');
-const configModal = document.getElementById('config-modal');
-const closeModalBtn = document.getElementById('close-modal-btn');
-
 // ==========================================
 // 2. INICIALIZAÇÃO
 // ==========================================
 window.addEventListener('DOMContentLoaded', () => {
+  // Limpa resíduos de chaves antigas do localStorage
+  localStorage.removeItem('marmita_api_key');
+
   // Mensagem inicial do bot
   renderMessage(
     'bot',
@@ -36,21 +34,8 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================
-// 3. EVENTOS DO CHAT E MODAL
+// 3. EVENTOS DO CHAT
 // ==========================================
-configBtn.addEventListener('click', () => {
-  configModal.classList.remove('hidden');
-});
-
-closeModalBtn.addEventListener('click', () => {
-  configModal.classList.add('hidden');
-});
-
-configModal.addEventListener('click', (e) => {
-  if (e.target === configModal) {
-    configModal.classList.add('hidden');
-  }
-});
 
 // Auto-expand textarea
 userInput.addEventListener('input', function() {
@@ -75,7 +60,7 @@ chatForm.addEventListener('submit', (e) => {
   userInput.value = '';
   userInput.style.height = 'auto';
 
-  // Simula digitação natural ultrarrápida (IA local tem latência zero)
+  // Simula digitação natural ultrarrápida
   setLoading(true);
 
   setTimeout(() => {
@@ -88,7 +73,7 @@ chatForm.addEventListener('submit', (e) => {
     } finally {
       setLoading(false);
     }
-  }, 250);
+  }, 200);
 });
 
 // ==========================================
@@ -115,18 +100,13 @@ function renderMessage(sender, text) {
 }
 
 function formatMessageText(raw) {
-  // Formatação segura de markdown para HTML
   let safe = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Quebras de linha
   safe = safe.replace(/\n/g, '<br>');
-
-  // Negrito **texto**
   safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  // Itálico *texto*
   safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>');
   return safe;
 }

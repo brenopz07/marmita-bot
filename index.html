@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Header -->
+    <!-- Header Limpo (Sem botão ou modal de API) -->
     <header class="chat-header">
       <div class="brand-info">
         <div class="avatar-container">
@@ -20,30 +20,10 @@
         </div>
         <div>
           <h1>Marmitaria Sabor Caseiro</h1>
-          <p class="subtitle">Atendente Virtual • IA Clássica Sem LLM</p>
+          <p class="subtitle">Atendente Virtual • 100% Client-Side</p>
         </div>
       </div>
-      <button id="config-btn" class="icon-button" title="Sobre a Arquitetura da IA">
-        ℹ️
-      </button>
     </header>
-
-    <!-- Modal Informativo sobre a Arquitetura Sem LLM -->
-    <div id="config-modal" class="modal hidden">
-      <div class="modal-content">
-        <h2>Arquitetura Inteligente Sem LLM ⚡</h2>
-        <p>Este chatbot opera <b>100% no navegador (Client-Side)</b>, sem necessidade de chaves de API ou servidores externos, seguindo o pipeline da aula:</p>
-        <ul style="text-align: left; margin: 15px 0; font-size: 0.9rem; line-height: 1.6; color: #475569;">
-          <li><b>Camada de Regras & Guardrails:</b> Triagem de saudações, comandos fixos e bloqueio a jailbreaks e temas fora de contexto.</li>
-          <li><b>Processamento NLP:</b> Normalização, segmentação em tokens, remoção de stopwords e stemming morfológico em português.</li>
-          <li><b>Vetorização TF-IDF & Cosseno:</b> Cálculo de similaridade vetorial para classificação de intenções com limiar de confiança.</li>
-          <li><b>Motor de Pedidos:</b> Controle de estado com personalização de ingredientes e cálculo determinístico com taxa fixa de entrega (R$ 5,00).</li>
-        </ul>
-        <div class="modal-actions">
-          <button id="close-modal-btn" class="primary-btn">Entendido</button>
-        </div>
-      </div>
-    </div>
 
     <!-- Quick Info Banner do Cardápio -->
     <div class="menu-banner">
