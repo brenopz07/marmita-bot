@@ -20,26 +20,27 @@
         </div>
         <div>
           <h1>Marmitaria Sabor Caseiro</h1>
-          <p class="subtitle">Atendente Virtual • Delivery Diário</p>
+          <p class="subtitle">Atendente Virtual • IA Clássica Sem LLM</p>
         </div>
       </div>
-      <button id="config-btn" class="icon-button" title="Configurar API Key">
-        ⚙️
+      <button id="config-btn" class="icon-button" title="Sobre a Arquitetura da IA">
+        ℹ️
       </button>
     </header>
 
-    <!-- Modal de Configuração de Chave de API -->
+    <!-- Modal Informativo sobre a Arquitetura Sem LLM -->
     <div id="config-modal" class="modal hidden">
       <div class="modal-content">
-        <h2>Configuração da API Key</h2>
-        <p>Informe sua chave da <b>OpenRouter</b> para habilitar o chatbot. A chave é salva apenas localmente no seu navegador (localStorage).</p>
-        
-        <label for="api-key-input">OpenRouter API Key:</label>
-        <input type="password" id="api-key-input" placeholder="Cole sua chave sk-or-v1-... aqui">
-
+        <h2>Arquitetura Inteligente Sem LLM ⚡</h2>
+        <p>Este chatbot opera <b>100% no navegador (Client-Side)</b>, sem necessidade de chaves de API ou servidores externos, seguindo o pipeline da aula:</p>
+        <ul style="text-align: left; margin: 15px 0; font-size: 0.9rem; line-height: 1.6; color: #475569;">
+          <li><b>Camada de Regras & Guardrails:</b> Triagem de saudações, comandos fixos e bloqueio a jailbreaks e temas fora de contexto.</li>
+          <li><b>Processamento NLP:</b> Normalização, segmentação em tokens, remoção de stopwords e stemming morfológico em português.</li>
+          <li><b>Vetorização TF-IDF & Cosseno:</b> Cálculo de similaridade vetorial para classificação de intenções com limiar de confiança.</li>
+          <li><b>Motor de Pedidos:</b> Controle de estado com personalização de ingredientes e cálculo determinístico com taxa fixa de entrega (R$ 5,00).</li>
+        </ul>
         <div class="modal-actions">
-          <button id="clear-key-btn" class="secondary-btn">Remover Chave</button>
-          <button id="save-config-btn" class="primary-btn">Salvar</button>
+          <button id="close-modal-btn" class="primary-btn">Entendido</button>
         </div>
       </div>
     </div>
@@ -87,6 +88,7 @@
     </footer>
   </div>
 
+  <script src="rules.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
