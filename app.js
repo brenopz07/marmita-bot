@@ -1,3 +1,8 @@
+// Regra de auto-limpeza de cache antigo para garantir que qualquer cliente execute a versão mais recente
+if (typeof localStorage !== 'undefined') {
+  localStorage.removeItem('marmita_api_key');
+}
+
 /**
  * Marmitaria Sabor Caseiro - Chatbot Client-Side Sem LLM
  * Orquestração da Interface, Renderização de Balões e Integração com o Motor de Regras + NLP
@@ -15,9 +20,9 @@ const typingIndicator = document.getElementById('typing-indicator');
 // ==========================================
 // 2. INICIALIZAÇÃO
 // ==========================================
-window.addEventListener('DOMContentLoaded', () => {
-  // Limpa resíduos de chaves antigas do localStorage
-  localStorage.removeItem('marmita_api_key');
+function startConversation() {
+  if (!chatMessages) return;
+  chatMessages.innerHTML = '';
 
   // Mensagem inicial do bot
   renderMessage(
@@ -31,7 +36,13 @@ window.addEventListener('DOMContentLoaded', () => {
     '🛵 *Taxa fixa de entrega: R$ 5,00*\n\n' +
     'Como posso montar o seu prato hoje? Você pode personalizar o ponto da carne ou retirar ingredientes!'
   );
-});
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', startConversation);
+} else {
+  startConversation();
+}
 
 // ==========================================
 // 3. EVENTOS DO CHAT
@@ -46,7 +57,7 @@ userInput.addEventListener('input', function() {
 userInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    chatForm.dispatchEvent(new Event('submit'));
+    chatForm.requestSubmit ? chatForm.requestSubmit() : chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
   }
 });
 
@@ -55,25 +66,29 @@ chatForm.addEventListener('submit', (e) => {
   const text = userInput.value.trim();
   if (!text) return;
 
-  // Renderiza mensagem do usuário
+  // Renderiza imediatamente mensagem do usuário
   renderMessage('user', text);
   userInput.value = '';
   userInput.style.height = 'auto';
 
-  // Simula digitação natural ultrarrápida
+  // Feedback visual de digitação
   setLoading(true);
 
   setTimeout(() => {
     try {
-      const reply = window.ChatEngine.processUserMessage(text);
-      renderMessage('bot', reply);
+      if (window.ChatEngine && typeof window.ChatEngine.processUserMessage === 'function') {
+        const reply = window.ChatEngine.processUserMessage(text);
+        renderMessage('bot', reply);
+      } else {
+        renderMessage('bot', 'Aguarde um instante, carregando a inteligência...');
+      }
     } catch (error) {
       console.error('Erro no processamento da mensagem:', error);
       renderMessage('bot', '❌ Desculpe, tive um imprevisto ao processar sua solicitação. Digite **ajuda** para ver os comandos disponíveis.');
     } finally {
       setLoading(false);
     }
-  }, 200);
+  }, 150);
 });
 
 // ==========================================
@@ -100,7 +115,7 @@ function renderMessage(sender, text) {
 }
 
 function formatMessageText(raw) {
-  let safe = raw
+  let safe = String(raw)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
