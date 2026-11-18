@@ -1,11 +1,11 @@
 /**
  * Marmitaria Sabor Caseiro - Motor de IA Clássica Sem LLM (Client-Side)
  * Arquitetura baseada nas especificações da aula:
- * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Encerramento, Regex)
+ * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Validação de Cardápio, Alterações)
  * 2. Pré-processamento NLP (Normalização, Tokenização, Remoção de Stopwords, Stemming/Radicais)
  * 3. Vetorização (Bag of Words / TF-IDF)
  * 4. Decisão por Similaridade de Cosseno
- * 5. Gerenciamento de Estado do Pedido e Cálculo Total
+ * 5. Gerenciamento de Estado do Pedido e Validação de Carrinho
  */
 
 // ========================================================
@@ -71,8 +71,8 @@ function normalizeText(text) {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove acentos
-    .replace(/[^\w\s]/g, ' ')       // pontuações viram espaço
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -142,6 +142,14 @@ const INTENT_DATASET = [
       'sem cebola', 'bife bem passado', 'carne ao ponto', 'carne mal passada',
       'sem feijao', 'pouco sal', 'sem salada', 'comida sem pimenta', 'bife frito sem gordura',
       'tem como tirar a cebola', 'trocar bife por frango', 'ponto da carne bem passado'
+    ]
+  },
+  {
+    intent: 'alterar_pedido',
+    examples: [
+      'quero alterar meu pedido', 'mudar pedido', 'quero fazer uma alteracao',
+      'modificar o pedido', 'gostaria de trocar o item', 'trocar de marmita',
+      'alterar o que pedi', 'quero mexer no meu pedido', 'mudar prato'
     ]
   },
   {
@@ -283,13 +291,15 @@ class OrderManager {
   constructor() {
     this.items = [];
     this.cliente = { nome: '', endereco: '', pagamento: '' };
-    this.etapa = 'atendimento'; // 'atendimento' | 'aguardando_dados' | 'encerrado' | 'cancelado'
+    this.etapa = 'atendimento'; // 'atendimento' | 'aguardando_alteracao' | 'aguardando_dados' | 'encerrado'
+    this.itemEmAlteracao = null; // referência ao item que está sendo alterado
   }
 
   reset() {
     this.items = [];
     this.cliente = { nome: '', endereco: '', pagamento: '' };
     this.etapa = 'atendimento';
+    this.itemEmAlteracao = null;
   }
 
   adicionarItem(nome, preco, tipo, qtd = 1, obs = []) {
@@ -303,6 +313,29 @@ class OrderManager {
     };
     this.items.push(item);
     return item;
+  }
+
+  removerItemPorNome(nomeTermo) {
+    const norm = normalizeText(nomeTermo);
+    const idx = this.items.findIndex(it => normalizeText(it.nome).includes(norm));
+    if (idx !== -1) {
+      const removido = this.items.splice(idx, 1)[0];
+      return removido;
+    }
+    return null;
+  }
+
+  encontrarItemPorNome(nomeTermo) {
+    const norm = normalizeText(nomeTermo);
+    return this.items.find(it => normalizeText(it.nome).includes(norm)) || null;
+  }
+
+  adicionarObservacaoAoItem(item, observacao) {
+    if (item && !item.obs.includes(observacao)) {
+      item.obs.push(observacao);
+      return true;
+    }
+    return false;
   }
 
   adicionarObservacaoAoUltimoItem(observacao) {
@@ -327,6 +360,15 @@ class OrderManager {
 
   temItens() {
     return this.items.length > 0;
+  }
+
+  listarItensFormatados() {
+    if (!this.temItens()) return 'Nenhum item adicionado no momento.';
+    return this.items.map((it, idx) => {
+      let desc = `${idx + 1}. **${it.qtd}x ${it.nome}** (R$ ${(it.preco * it.qtd).toFixed(2).replace('.', ',')})`;
+      if (it.obs && it.obs.length > 0) desc += ` [Personalizações: ${it.obs.join(', ')}]`;
+      return desc;
+    }).join('\n');
   }
 
   gerarResumoPedido() {
@@ -413,7 +455,7 @@ function isOffTopicOrJailbreak(text) {
   return false;
 }
 
-// Verifica se o usuário expressou intenção de NÃO prosseguir / desistir / encerrar
+// Verifica se o usuário expressou intenção de desistir/cancelar
 function isCancellationOrRefusal(text) {
   const norm = normalizeText(text);
 
@@ -445,6 +487,25 @@ function isCancellationOrRefusal(text) {
     if (pat.test(norm)) return true;
   }
   return false;
+}
+
+// Itens comuns de restaurante que NÃO constam no cardápio de hoje
+const ITENS_INDISPONIVEIS = [
+  'pizza', 'hamburguer artesanal', 'hamburguer tradicional', 'pastel', 'sushi', 'temaki',
+  'feijoada', 'lasanha', 'parmegiana', 'churrasco completo', 'macarronada', 'strogonoff',
+  'coxinha', 'salgado', 'acai', 'cerveja', 'chopp', 'vinho', 'whisky', 'sobremesa',
+  'pudim', 'sorvete', 'bolo', 'torta', 'yakisoba', 'peixe frito', 'camarao', 'salmao'
+];
+
+function detectUnavailableItem(text) {
+  const norm = normalizeText(text);
+  for (const item of ITENS_INDISPONIVEIS) {
+    const regex = new RegExp(`\\b${item}\\b`, 'i');
+    if (regex.test(norm)) {
+      return item;
+    }
+  }
+  return null;
 }
 
 function extractQuantity(text) {
@@ -551,7 +612,6 @@ function processUserMessage(rawText) {
   const norm = normalizeText(userText);
 
   // ETAPA 2: Tratamento de Desistência / Recusa / Cancelamento
-  // Se o cliente disser que não quer mais seguir, não insiste e encerra imediatamente.
   if (isCancellationOrRefusal(userText)) {
     const tinhaItens = orderManager.temItens();
     orderManager.reset();
@@ -576,6 +636,7 @@ function processUserMessage(rawText) {
       "📌 **Comandos Úteis:**\n\n" +
       "• **Cardápio**: Veja todas as opções e valores.\n" +
       "• **Pedir [Marmita]**: Ex: *Quero 1 Marmita Executiva com carne ao ponto e sem cebola*.\n" +
+      "• **Alterar pedido**: Altere ingredientes ou troque itens do seu carrinho.\n" +
       "• **Bebidas**: Adicione refrigerante, suco ou água.\n" +
       "• **Fechar pedido**: Ver a conta com a taxa fixa de entrega (R$ 5,00).\n" +
       "• **Cancelar / Não quero mais**: Encerra o pedido imediatamente sem insistência.\n" +
@@ -593,7 +654,112 @@ function processUserMessage(rawText) {
     orderManager.reset();
   }
 
-  // ETAPA 4: Se estiver na etapa de finalização aguardando dados
+  // ETAPA 4: Validação de Pedido de Produto Inexistente no Cardápio
+  const itemIndisponivel = detectUnavailableItem(userText);
+  if (itemIndisponivel) {
+    return (
+      `❌ Desculpe, mas não temos **${itemIndisponivel}** disponível em nosso cardápio de hoje.\n\n` +
+      `Trabalhamos exclusivamente com nossas deliciosas opções de almoço caseiro:\n` +
+      `• **Marmita Tradicional** (R$ 22,00)\n` +
+      `• **Marmita Fit** (R$ 25,00)\n` +
+      `• **Marmita Vegana** (R$ 24,00)\n` +
+      `• **Marmita Executiva** (R$ 28,00)\n\n` +
+      `Gostaria de escolher uma dessas opções para a sua refeição? 🍱`
+    );
+  }
+
+  // ETAPA 5: Fluxo de Alteração de Pedido
+  // Caso A: Se o bot estiver aguardando o cliente especificar o que quer alterar
+  if (orderManager.etapa === 'aguardando_alteracao') {
+    const customizacoes = extractCustomizations(userText);
+    const marmitasNovas = detectMarmitas(userText);
+
+    // Se o cliente mencionou uma nova marmita para substituir
+    if (marmitasNovas.length > 0) {
+      if (orderManager.itemEmAlteracao) {
+        orderManager.removerItemPorNome(orderManager.itemEmAlteracao.nome);
+      }
+      const novo = orderManager.adicionarItem(marmitasNovas[0].nome, marmitasNovas[0].preco, 'marmita', 1, customizacoes);
+      orderManager.etapa = 'atendimento';
+      orderManager.itemEmAlteracao = null;
+      return (
+        `✅ Perfeito! Pedido alterado para **${novo.nome}** (R$ ${novo.preco.toFixed(2).replace('.', ',')})` +
+        (novo.obs.length > 0 ? ` com as seguintes observações: *${novo.obs.join(', ')}*.` : '.') +
+        `\n\nSeu carrinho atualizado:\n${orderManager.listarItensFormatados()}\n\nDeseja alterar mais alguma coisa ou podemos **fechar o pedido**?`
+      );
+    }
+
+    // Se o cliente especificou apenas alterações de ingredientes (ex: sem cebola, carne bem passada)
+    if (customizacoes.length > 0) {
+      const alvo = orderManager.itemEmAlteracao || orderManager.items[orderManager.items.length - 1];
+      if (alvo) {
+        customizacoes.forEach(obs => orderManager.adicionarObservacaoAoItem(alvo, obs));
+        orderManager.etapa = 'atendimento';
+        orderManager.itemEmAlteracao = null;
+        return (
+          `✅ Alteração aplicada com sucesso na **${alvo.nome}**: *${customizacoes.join(', ')}*.\n\n` +
+          `Deseja fazer mais alguma alteração ou podemos **fechar o pedido**?`
+        );
+      }
+    }
+
+    // Se o cliente quiser remover ou trocar tudo
+    if (/trocar|mudar|remover|tirar/i.test(norm)) {
+      orderManager.etapa = 'atendimento';
+      return `Claro! O que você gostaria de retirar ou adicionar? Nossas opções são: Tradicional, Fit, Vegana e Executiva.`;
+    }
+
+    orderManager.etapa = 'atendimento';
+  }
+
+  // Caso B: O cliente pediu para alterar / mudar um produto
+  const solicitouAlteracao = /\b(alterar|mudar|modificar|trocar|troca)\b/i.test(norm);
+  if (solicitouAlteracao) {
+    if (!orderManager.temItens()) {
+      return (
+        "⚠️ Não foi possível realizar a alteração porque seu **carrinho ainda está vazio**!\n\n" +
+        "Gostaria de dar uma olhada em nosso cardápio para adicionar uma marmita primeiro?"
+      );
+    }
+
+    // Verifica se o cliente mencionou um produto específico para alterar (ex: "quero alterar a executiva")
+    const marmitasMencionadas = detectMarmitas(userText);
+    const bebidasMencionadas = detectBebidas(userText);
+    const itemMencionado = marmitasMencionadas[0] || bebidasMencionadas[0];
+
+    if (itemMencionado) {
+      // Verifica se esse produto está no carrinho
+      const itemNoCarrinho = orderManager.encontrarItemPorNome(itemMencionado.nome);
+      if (!itemNoCarrinho) {
+        return (
+          `⚠️ **Atenção:** Você solicitou alterar **${itemMencionado.nome}**, mas este produto **não está no seu carrinho**!\n\n` +
+          `Itens atualmente em seu pedido:\n${orderManager.listarItensFormatados()}\n\n` +
+          `Por favor, informe qual dos itens do seu carrinho você deseja alterar e o que gostaria de mudar.`
+        );
+      } else {
+        orderManager.etapa = 'aguardando_alteracao';
+        orderManager.itemEmAlteracao = itemNoCarrinho;
+        return (
+          `Com certeza! Você deseja alterar a **${itemNoCarrinho.nome}**.\n\n` +
+          `O que você gostaria de alterar nela? Você pode:\n` +
+          `• Mudar o ponto da carne (mal passada, ao ponto, bem passada)\n` +
+          `• Retirar ingredientes (ex: sem cebola, sem feijão, sem salada)\n` +
+          `• Trocar por outra marmita (Tradicional, Fit, Vegana ou Executiva)`
+        );
+      }
+    }
+
+    // Se pediu para alterar genericamente sem especificar o item
+    orderManager.etapa = 'aguardando_alteracao';
+    orderManager.itemEmAlteracao = orderManager.items[orderManager.items.length - 1];
+    return (
+      `Claro! O que você deseja alterar no seu pedido?\n\n` +
+      `Itens no seu carrinho:\n${orderManager.listarItensFormatados()}\n\n` +
+      `Pode me dizer qual ingrediente quer retirar, o ponto da carne ou se deseja trocar por outro prato do cardápio!`
+    );
+  }
+
+  // ETAPA 6: Se estiver na etapa de finalização aguardando dados cadastrais
   if (orderManager.etapa === 'aguardando_dados') {
     let pagto = '';
     if (/pix/i.test(norm)) pagto = 'Pix';
@@ -619,7 +785,7 @@ function processUserMessage(rawText) {
     );
   }
 
-  // ETAPA 5: Detecção de Itens do Pedido
+  // ETAPA 7: Detecção de Itens do Pedido (Adição direta)
   const marmitasAchadas = detectMarmitas(userText);
   const bebidasAchadas = detectBebidas(userText);
   const customizacoes = extractCustomizations(userText);
@@ -641,7 +807,7 @@ function processUserMessage(rawText) {
       feedback += `🥤 Adicionado: **${item.qtd}x ${item.nome}** (R$ ${(item.preco * item.qtd).toFixed(2).replace('.', ',')})\n`;
     });
 
-    feedback += `\nDeseja adicionar mais alguma marmita ou bebida? Quando estiver pronto, basta pedir para **fechar o pedido** (ou dizer **cancelar** se mudar de ideia)!`;
+    feedback += `\nDeseja adicionar mais alguma marmita ou bebida? Quando estiver pronto, basta pedir para **fechar o pedido** (ou dizer **alterar** se quiser ajustar algo)!`;
     return feedback;
   }
 
@@ -650,7 +816,7 @@ function processUserMessage(rawText) {
     return `Perfeito! Anotei a personalização (**${customizacoes.join(', ')}**) no seu pedido. Algo mais?`;
   }
 
-  // ETAPA 6: Fechamento de Pedido
+  // ETAPA 8: Fechamento de Pedido
   if (/\b(fechar|finalizar|conta|total|quanto deu|concluir)\b/i.test(norm)) {
     if (!orderManager.temItens()) {
       return "Você ainda não escolheu nenhum item! Gostaria de dar uma olhada no nosso cardápio antes de fechar o pedido?";
@@ -659,7 +825,7 @@ function processUserMessage(rawText) {
     return orderManager.gerarResumoPedido();
   }
 
-  // ETAPA 7: Classificação com NLP + TF-IDF + Cosseno
+  // ETAPA 9: Classificação com NLP + TF-IDF + Cosseno
   const { stems } = preprocessNLP(userText);
   const prediction = vectorizer.predictIntent(stems);
 
@@ -682,6 +848,13 @@ function processUserMessage(rawText) {
           "Qual opção você deseja escolher hoje? Você pode personalizar com 'sem cebola', 'carne bem passada', etc."
         );
 
+      case 'alterar_pedido':
+        if (!orderManager.temItens()) {
+          return "Seu carrinho está vazio no momento. Que tal escolher uma das nossas marmitas primeiro?";
+        }
+        orderManager.etapa = 'aguardando_alteracao';
+        return `O que você deseja alterar no seu pedido? Você pode mudar ingredientes, pontos da carne ou trocar de prato!`;
+
       case 'pedir_marmita':
         return "Qual das nossas marmitas você deseja? Temos **Tradicional** (R$ 22), **Fit** (R$ 25), **Vegana** (R$ 24) e **Executiva** (R$ 28). Você também pode especificar as personalizações!";
 
@@ -702,11 +875,11 @@ function processUserMessage(rawText) {
         return orderManager.gerarResumoPedido();
 
       case 'ajuda':
-        return "Você pode me pedir para ver o cardápio, escolher sua marmita, retirar ingredientes ou fechar o seu pedido a qualquer momento!";
+        return "Você pode me pedir para ver o cardápio, escolher sua marmita, retirar ingredientes, alterar produtos ou fechar o seu pedido a qualquer momento!";
     }
   }
 
-  // ETAPA 8: Fallback Amigável
+  // ETAPA 10: Fallback Amigável
   return (
     "Posso ajudar com o seu pedido! 🍱 Você gostaria de ver o nosso **cardápio de hoje**, escolher uma **marmita** ou **fechar o pedido**?"
   );
