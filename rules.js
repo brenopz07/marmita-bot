@@ -1,10 +1,10 @@
 /**
  * Marmitaria Sabor Caseiro - Motor de IA Clássica Sem LLM (Client-Side)
  * Arquitetura baseada nas especificações da aula:
- * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Regex)
+ * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Encerramento, Regex)
  * 2. Pré-processamento NLP (Normalização, Tokenização, Remoção de Stopwords, Stemming/Radicais)
  * 3. Vetorização (Bag of Words / TF-IDF)
- * 4. Decisão por Similaridade de Cosseno (com threshold mínimo 0.65)
+ * 4. Decisão por Similaridade de Cosseno
  * 5. Gerenciamento de Estado do Pedido e Cálculo Total
  */
 
@@ -77,7 +77,6 @@ function normalizeText(text) {
     .trim();
 }
 
-// Redução morfológica simplificada para radicais (Stemmer PT)
 function stemWord(word) {
   if (word.length <= 3) return word;
 
@@ -105,7 +104,6 @@ function stemWord(word) {
 function preprocessNLP(text) {
   const normalized = normalizeText(text);
   const rawTokens = normalized.split(' ').filter(t => t.length > 0);
-  // Remove stopwords, preservando palavras críticas para personalização se houver
   const filtered = rawTokens.filter(t => !STOPWORDS.has(t));
   const stems = filtered.map(stemWord);
   return { normalized, tokens: rawTokens, filtered, stems };
@@ -115,14 +113,12 @@ function preprocessNLP(text) {
 // 3. BASE DE INTENÇÕES (TREINAMENTO DO VETORIZADOR BOW / TF-IDF)
 // ========================================================
 const INTENT_DATASET = [
-  // Intenção: SAUDACAO
   {
     intent: 'saudacao',
     examples: [
       'oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'opa', 'e ai', 'fala', 'oie', 'tudo bem', 'tudo bom'
     ]
   },
-  // Intenção: VER_CARDAPIO
   {
     intent: 'ver_cardapio',
     examples: [
@@ -131,7 +127,6 @@ const INTENT_DATASET = [
       'quero ver o que tem para comer', 'quais os pratos disponiveis', 'lista de marmitas'
     ]
   },
-  // Intenção: PEDIR_MARMITA
   {
     intent: 'pedir_marmita',
     examples: [
@@ -141,7 +136,6 @@ const INTENT_DATASET = [
       'quero duas tradicionais', 'me da uma marmita fit'
     ]
   },
-  // Intenção: PERSONALIZACAO
   {
     intent: 'personalizacao',
     examples: [
@@ -150,7 +144,6 @@ const INTENT_DATASET = [
       'tem como tirar a cebola', 'trocar bife por frango', 'ponto da carne bem passado'
     ]
   },
-  // Intenção: BEBIDAS
   {
     intent: 'pedir_bebida',
     examples: [
@@ -158,7 +151,6 @@ const INTENT_DATASET = [
       'quais bebidas tem', 'adiciona uma agua mineral', 'tem refri gelado'
     ]
   },
-  // Intenção: FECHAR_PEDIDO
   {
     intent: 'fechar_pedido',
     examples: [
@@ -167,7 +159,6 @@ const INTENT_DATASET = [
       'ja escolhi tudo quanto deu', 'finalizar a compra'
     ]
   },
-  // Intenção: TAXA_ENTREGA / PRAZO
   {
     intent: 'taxa_tempo_entrega',
     examples: [
@@ -175,7 +166,6 @@ const INTENT_DATASET = [
       'qual o prazo de entrega', 'entrega no centro', 'valor da entrega'
     ]
   },
-  // Intenção: FORMAS_PAGAMENTO
   {
     intent: 'formas_pagamento',
     examples: [
@@ -183,7 +173,6 @@ const INTENT_DATASET = [
       'como posso pagar', 'passa cartao na entrega'
     ]
   },
-  // Intenção: AJUDA / COMANDOS
   {
     intent: 'ajuda',
     examples: [
@@ -192,7 +181,6 @@ const INTENT_DATASET = [
   }
 ];
 
-// Construção do Vocabulário Global e Matriz TF-IDF
 class TextVectorizer {
   constructor(dataset) {
     this.vocabulary = [];
@@ -213,7 +201,6 @@ class TextVectorizer {
       });
     });
 
-    // 1. Monta vocabulário único de stems
     const vocabSet = new Set();
     documents.forEach(doc => {
       doc.stems.forEach(stem => vocabSet.add(stem));
@@ -225,13 +212,11 @@ class TextVectorizer {
     });
 
     const N = documents.length;
-    // 2. Calcula IDF para cada termo
     this.idf = this.vocabulary.map(term => {
       const docCount = documents.filter(doc => doc.stems.includes(term)).length;
-      return Math.log((N + 1) / (docCount + 1)) + 1; // IDF suavizado
+      return Math.log((N + 1) / (docCount + 1)) + 1;
     });
 
-    // 3. Vetoriza cada documento com TF-IDF
     documents.forEach(doc => {
       const vec = this.vectorize(doc.stems);
       this.docVectors.push(vec);
@@ -257,7 +242,6 @@ class TextVectorizer {
     return vec;
   }
 
-  // Similaridade de Cosseno: cos(A, B) = (A . B) / (||A|| * ||B||)
   cosineSimilarity(vecA, vecB) {
     let dotProduct = 0.0;
     let normA = 0.0;
@@ -290,7 +274,6 @@ class TextVectorizer {
   }
 }
 
-// Inicializa o vetorizador
 const vectorizer = new TextVectorizer(INTENT_DATASET);
 
 // ========================================================
@@ -298,13 +281,9 @@ const vectorizer = new TextVectorizer(INTENT_DATASET);
 // ========================================================
 class OrderManager {
   constructor() {
-    this.items = []; // { id, nome, tipo, preco, qtd, obs: [] }
-    this.cliente = {
-      nome: '',
-      endereco: '',
-      pagamento: ''
-    };
-    this.etapa = 'atendimento'; // 'atendimento' | 'confirmando' | 'aguardando_dados' | 'finalizado'
+    this.items = [];
+    this.cliente = { nome: '', endereco: '', pagamento: '' };
+    this.etapa = 'atendimento'; // 'atendimento' | 'aguardando_dados' | 'encerrado' | 'cancelado'
   }
 
   reset() {
@@ -373,7 +352,8 @@ class OrderManager {
     resumo += `Para concluir a entrega, por favor me informe:\n`;
     resumo += `1. **Seu Nome**\n`;
     resumo += `2. **Endereço Completo de Entrega** (Rua, Número, Bairro)\n`;
-    resumo += `3. **Forma de Pagamento** (Pix, Cartão ou Dinheiro)`;
+    resumo += `3. **Forma de Pagamento** (Pix, Cartão ou Dinheiro)\n\n`;
+    resumo += `*(Caso deseje desistir ou cancelar, basta digitar **cancelar** ou **não quero mais**)*`;
 
     return resumo;
   }
@@ -384,15 +364,12 @@ const orderManager = new OrderManager();
 // ========================================================
 // 5. MOTOR DE REGRAS, GUARDRAILS E PARSER DETERMINÍSTICO
 // ========================================================
-
-// Guardrail de escopo e imunidade a injeção/jailbreak
 const GUARDRAIL_REFUSAL = 
   "Desculpe, mas sou o assistente virtual da Marmitaria Sabor Caseiro e posso ajudar apenas com informações do nosso cardápio, pedidos e entregas de marmitas. Gostaria de dar uma olhada nas opções deliciosas de hoje? 🍱";
 
 function isOffTopicOrJailbreak(text) {
   const normalized = normalizeText(text);
 
-  // Padrões de Jailbreak / Prompt Injection
   const jailbreakPatterns = [
     /ignore (all|todas|as)? (previous|anteriores)? instructions/i,
     /desconsidere as instrucoes/i,
@@ -421,7 +398,6 @@ function isOffTopicOrJailbreak(text) {
     }
   }
 
-  // Verifica tópicos comprovadamente fora de contexto de marmitaria e comida
   const outOfContextKeywords = [
     'python', 'javascript', 'html', 'css', 'programacao', 'deputado', 'presidente',
     'futebol', 'campeonato', 'bitcoin', 'criptomoeda', 'vagina', 'sexo', 'hack'
@@ -437,7 +413,40 @@ function isOffTopicOrJailbreak(text) {
   return false;
 }
 
-// Extrai quantidades ("2 marmitas", "1 executiva", "duas fit")
+// Verifica se o usuário expressou intenção de NÃO prosseguir / desistir / encerrar
+function isCancellationOrRefusal(text) {
+  const norm = normalizeText(text);
+
+  const refusalPatterns = [
+    /^(nao|nao quero|nao vou querer|nao quero mais|desisti|desisto)$/i,
+    /nao quero mais/i,
+    /nao vou pedir/i,
+    /deixa pra la/i,
+    /deixa quieto/i,
+    /cancela/i,
+    /cancelar/i,
+    /cancelar pedido/i,
+    /pode cancelar/i,
+    /nao precisa mais/i,
+    /nao vou querer nada/i,
+    /nao tenho interesse/i,
+    /encerrar/i,
+    /encerrar atendimento/i,
+    /parar/i,
+    /sair/i,
+    /tchau/i,
+    /ate logo/i,
+    /so isso obrigado/i,
+    /nao obrigado/i,
+    /nada mais/i
+  ];
+
+  for (const pat of refusalPatterns) {
+    if (pat.test(norm)) return true;
+  }
+  return false;
+}
+
 function extractQuantity(text) {
   const matchNum = text.match(/\b([1-9]|10)\b/);
   if (matchNum) return parseInt(matchNum[1], 10);
@@ -449,29 +458,24 @@ function extractQuantity(text) {
   return 1;
 }
 
-// Extrai personalizações de ponto de carne e ingredientes
 function extractCustomizations(text) {
   const norm = normalizeText(text);
   const obs = [];
 
-  // Ponto da carne
   if (/bem passad[oa]/i.test(norm)) obs.push('Carne bem passada');
   else if (/ao ponto/i.test(norm)) obs.push('Carne ao ponto');
   else if (/mal passad[oa]/i.test(norm)) obs.push('Carne mal passada');
 
-  // Opção de proteína na tradicional
   if (/frango grelhado|opcao frango/i.test(norm)) obs.push('Opção: Frango grelhado');
   if (/bife acebolado|opcao bife/i.test(norm)) obs.push('Opção: Bife');
 
-  // Remoção de ingredientes
   const semMatches = norm.match(/sem\s+([a-z]+)/g);
   if (semMatches) {
     semMatches.forEach(item => {
-      obs.push(item); // ex: "sem cebola", "sem salada", "sem feijao"
+      obs.push(item);
     });
   }
 
-  // Pouco sal / sem pimenta
   if (/pouco sal/i.test(norm)) obs.push('Pouco sal');
   if (/sem pimenta/i.test(norm)) obs.push('Sem pimenta');
   if (/tempero a parte/i.test(norm)) obs.push('Tempero à parte');
@@ -479,7 +483,6 @@ function extractCustomizations(text) {
   return obs;
 }
 
-// Detecta menção a marmitas específicas
 function detectMarmitas(text) {
   const norm = normalizeText(text);
   const detected = [];
@@ -499,7 +502,6 @@ function detectMarmitas(text) {
   return detected;
 }
 
-// Detecta menção a bebidas
 function detectBebidas(text) {
   const norm = normalizeText(text);
   const detected = [];
@@ -515,6 +517,25 @@ function detectBebidas(text) {
   return detected;
 }
 
+function getSaudacaoContextual() {
+  const hora = new Date().getHours();
+  let cumprimento = 'Olá!';
+  if (hora >= 5 && hora < 12) cumprimento = 'Bom dia!';
+  else if (hora >= 12 && hora < 18) cumprimento = 'Boa tarde!';
+  else cumprimento = 'Boa noite!';
+
+  return (
+    `${cumprimento} Seja muito bem-vindo(a) à **Marmitaria Sabor Caseiro**! 🍱\n\n` +
+    `Aqui você encontra refeições frescas e deliciosas feitas na hora:\n` +
+    `• **Marmita Tradicional** (Bife acebolado ou frango) - R$ 22,00\n` +
+    `• **Marmita Fit** (Arroz integral, filé e legumes) - R$ 25,00\n` +
+    `• **Marmita Vegana** (Hambúrguer de grão-de-bico) - R$ 24,00\n` +
+    `• **Marmita Executiva** (Picanha e tropeiro) - R$ 28,00\n\n` +
+    `🛵 *Taxa fixa de entrega: R$ 5,00*\n\n` +
+    `Como posso ajudar você hoje? Você pode escolher um prato, personalizar ingredientes ou tirar dúvidas!`
+  );
+}
+
 // ========================================================
 // 6. CONTROLADOR PRINCIPAL DO CHATBOT (SEM LLM)
 // ========================================================
@@ -522,14 +543,34 @@ function processUserMessage(rawText) {
   const userText = rawText.trim();
   if (!userText) return 'Por favor, digite uma mensagem!';
 
-  // ETAPA 1: Verificação de Guardrails (Escopo Restrito & Anti-Jailbreak)
+  // ETAPA 1: Guardrails
   if (isOffTopicOrJailbreak(userText)) {
     return GUARDRAIL_REFUSAL;
   }
 
   const norm = normalizeText(userText);
 
-  // ETAPA 2: Comandos Determinísticos Especiais
+  // ETAPA 2: Tratamento de Desistência / Recusa / Cancelamento
+  // Se o cliente disser que não quer mais seguir, não insiste e encerra imediatamente.
+  if (isCancellationOrRefusal(userText)) {
+    const tinhaItens = orderManager.temItens();
+    orderManager.reset();
+    orderManager.etapa = 'encerrado';
+
+    if (tinhaItens) {
+      return (
+        "Sem problemas! Seu pedido foi cancelado e o atendimento encerrado com sucesso. 👍\n\n" +
+        "Agradecemos o seu contato com a **Marmitaria Sabor Caseiro**. Quando quiser saborear nossos pratos novamente, basta iniciar um novo chat ou digitar **olá**! Tenha um ótimo dia! 🍱"
+      );
+    } else {
+      return (
+        "Entendido! Atendimento encerrado. Muito obrigado pela visita à **Marmitaria Sabor Caseiro**! ✨\n\n" +
+        "Estaremos por aqui sempre que der aquela fominha caseira. Se precisar de algo no futuro, é só chamar!"
+      );
+    }
+  }
+
+  // ETAPA 3: Comandos de Ajuda e Reinicialização
   if (/^(ajuda|socorro|comandos|help)$/i.test(norm)) {
     return (
       "📌 **Comandos Úteis:**\n\n" +
@@ -537,31 +578,36 @@ function processUserMessage(rawText) {
       "• **Pedir [Marmita]**: Ex: *Quero 1 Marmita Executiva com carne ao ponto e sem cebola*.\n" +
       "• **Bebidas**: Adicione refrigerante, suco ou água.\n" +
       "• **Fechar pedido**: Ver a conta com a taxa fixa de entrega (R$ 5,00).\n" +
-      "• **Reiniciar**: Limpa o pedido atual e recomeça."
+      "• **Cancelar / Não quero mais**: Encerra o pedido imediatamente sem insistência.\n" +
+      "• **Novo chat / Reiniciar**: Começa um atendimento do zero."
     );
   }
 
-  if (/^(reiniciar|cancelar pedido|limpar pedido|novo pedido)$/i.test(norm)) {
+  if (/^(reiniciar|novo chat|novo pedido|recomecar)$/i.test(norm)) {
     orderManager.reset();
-    return "🔄 Seu pedido foi reiniciado com sucesso! O que gostaria de pedir hoje?";
+    return getSaudacaoContextual();
   }
 
-  // ETAPA 3: Se estiver aguardando dados cadastrais para fechar
+  // Se o atendimento anterior tiver sido encerrado e o cliente voltar a falar
+  if (orderManager.etapa === 'encerrado') {
+    orderManager.reset();
+  }
+
+  // ETAPA 4: Se estiver na etapa de finalização aguardando dados
   if (orderManager.etapa === 'aguardando_dados') {
-    // Detecta forma de pagamento ou endereço
     let pagto = '';
     if (/pix/i.test(norm)) pagto = 'Pix';
     else if (/cartao|credito|debito/i.test(norm)) pagto = 'Cartão';
     else if (/dinheiro|troco/i.test(norm)) pagto = 'Dinheiro';
 
     if (pagto) orderManager.cliente.pagamento = pagto;
-    if (userText.length > 5) {
+    if (userText.length > 5 && !pagto) {
       if (!orderManager.cliente.endereco) {
         orderManager.cliente.endereco = userText;
       }
     }
 
-    orderManager.etapa = 'finalizado';
+    orderManager.etapa = 'encerrado';
     const total = orderManager.calcularTotal();
     return (
       `🎉 **Pedido Confirmado com Sucesso!**\n\n` +
@@ -569,17 +615,16 @@ function processUserMessage(rawText) {
       `• **Total a pagar:** R$ ${total.toFixed(2).replace('.', ',')} *(com taxa de entrega inclusa)*\n` +
       (orderManager.cliente.pagamento ? `• **Forma de pagamento:** ${orderManager.cliente.pagamento}\n` : '') +
       `• **Previsão de entrega:** ${CARDAPIO.tempoEntrega} 🛵\n\n` +
-      `Muito obrigado pela preferência e bom apetite! Caso precise de um novo pedido, basta digitar **reiniciar**.`
+      `Muito obrigado pela preferência e bom apetite! Caso queira fazer um novo pedido mais tarde, basta clicar em **Novo Chat** ou digitar **olá**.`
     );
   }
 
-  // ETAPA 4: Detecção de Itens do Pedido (Marmitas, Bebidas, Quantidades e Personalizações)
+  // ETAPA 5: Detecção de Itens do Pedido
   const marmitasAchadas = detectMarmitas(userText);
   const bebidasAchadas = detectBebidas(userText);
   const customizacoes = extractCustomizations(userText);
   const qtd = extractQuantity(userText);
 
-  // Se o cliente escolheu marmitas ou bebidas
   if (marmitasAchadas.length > 0 || bebidasAchadas.length > 0) {
     let feedback = '';
 
@@ -596,17 +641,16 @@ function processUserMessage(rawText) {
       feedback += `🥤 Adicionado: **${item.qtd}x ${item.nome}** (R$ ${(item.preco * item.qtd).toFixed(2).replace('.', ',')})\n`;
     });
 
-    feedback += `\nDeseja adicionar mais alguma marmita ou bebida? Quando terminar, é só pedir para **fechar o pedido**!`;
+    feedback += `\nDeseja adicionar mais alguma marmita ou bebida? Quando estiver pronto, basta pedir para **fechar o pedido** (ou dizer **cancelar** se mudar de ideia)!`;
     return feedback;
   }
 
-  // Se o cliente enviou apenas uma personalização avulsa para o último item adicionado
   if (customizacoes.length > 0 && orderManager.temItens()) {
     customizacoes.forEach(obs => orderManager.adicionarObservacaoAoUltimoItem(obs));
     return `Perfeito! Anotei a personalização (**${customizacoes.join(', ')}**) no seu pedido. Algo mais?`;
   }
 
-  // ETAPA 5: Fechamento de Pedido
+  // ETAPA 6: Fechamento de Pedido
   if (/\b(fechar|finalizar|conta|total|quanto deu|concluir)\b/i.test(norm)) {
     if (!orderManager.temItens()) {
       return "Você ainda não escolheu nenhum item! Gostaria de dar uma olhada no nosso cardápio antes de fechar o pedido?";
@@ -615,19 +659,16 @@ function processUserMessage(rawText) {
     return orderManager.gerarResumoPedido();
   }
 
-  // ETAPA 6: Processamento NLP + Vetorização TF-IDF + Similaridade de Cosseno (Threshold: 0.65)
+  // ETAPA 7: Classificação com NLP + TF-IDF + Cosseno
   const { stems } = preprocessNLP(userText);
   const prediction = vectorizer.predictIntent(stems);
 
-  const COSINE_THRESHOLD = 0.50; // Threshold adaptado para termos curtos em português
+  const COSINE_THRESHOLD = 0.50;
 
   if (prediction && prediction.score >= COSINE_THRESHOLD) {
     switch (prediction.intent) {
       case 'saudacao':
-        return (
-          "Olá! Seja bem-vindo(a) à **Marmitaria Sabor Caseiro**! 🍱\n\n" +
-          "O que gostaria de pedir hoje? Temos opções tradicionais, fit, veganas e executivas fresquinhas!"
-        );
+        return getSaudacaoContextual();
 
       case 'ver_cardapio':
         return (
@@ -665,15 +706,16 @@ function processUserMessage(rawText) {
     }
   }
 
-  // ETAPA 7: Fallback Amigável do Atendente
+  // ETAPA 8: Fallback Amigável
   return (
     "Posso ajudar com o seu pedido! 🍱 Você gostaria de ver o nosso **cardápio de hoje**, escolher uma **marmita** ou **fechar o pedido**?"
   );
 }
 
-// Exportação para o app.js
+// Exportação
 window.ChatEngine = {
   processUserMessage,
   orderManager,
-  CARDAPIO
+  CARDAPIO,
+  getSaudacaoContextual
 };
