@@ -1,7 +1,7 @@
 /**
  * Marmitaria Sabor Caseiro - Motor de IA Clássica Sem LLM (Client-Side)
  * Arquitetura baseada nas especificações da aula:
- * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Validação Estrita de Cardápio, Alterações)
+ * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Validação Estrita de Cardápio e Bebidas, Alterações)
  * 2. Pré-processamento NLP (Normalização, Tokenização, Remoção de Stopwords, Stemming/Radicais)
  * 3. Vetorização (Bag of Words / TF-IDF)
  * 4. Decisão por Similaridade de Cosseno
@@ -155,8 +155,8 @@ const INTENT_DATASET = [
   {
     intent: 'pedir_bebida',
     examples: [
-      'tem refrigerante', 'quero uma coca lata', 'suco de laranja natural',
-      'quais bebidas tem', 'adiciona uma agua mineral', 'tem refri gelado'
+      'quais bebidas tem', 'quero ver as bebidas', 'opcoes de bebida', 'tem bebida',
+      'mostrar bebidas', 'lista de bebidas', 'cardapio de bebidas', 'bebidas disponiveis'
     ]
   },
   {
@@ -491,20 +491,40 @@ function isCancellationOrRefusal(text) {
 const ITENS_INDISPONIVEIS = [
   'pizza', 'hamburguer artesanal', 'hamburguer tradicional', 'hamburguer', 'pastel', 'sushi', 'temaki',
   'feijoada', 'lasanha', 'parmegiana', 'churrasco completo', 'churrasco', 'macarronada', 'strogonoff',
-  'coxinha', 'salgado', 'acai', 'cerveja', 'chopp', 'vinho', 'whisky', 'sobremesa',
+  'coxinha', 'salgado', 'acai', 'sobremesa',
   'pudim', 'sorvete', 'bolo', 'torta', 'yakisoba', 'peixe frito', 'peixe', 'camarao', 'salmao',
   'costela', 'calabresa', 'marmita de calabresa', 'marmita de peixe', 'marmita de costela',
   'marmita de carne moida', 'carne moida', 'cupim', 'torresmo', 'mandioca frita', 'polenta'
 ];
 
+// Lista de bebidas que NÃO trabalhamos
+const BEBIDAS_INDISPONIVEIS = [
+  'cerveja', 'heineken', 'brahma', 'skol', 'amstel', 'budweiser', 'corona', 'chopp', 'chope',
+  'vinho', 'whisky', 'vodka', 'gin', 'caipirinha', 'energetico', 'red bull', 'monster',
+  'suco de uva', 'suco de maracuja', 'suco de morango', 'suco de abacaxi', 'suco de manga',
+  'suco de goiaba', 'suco de caju', 'suco de acerola', 'suco de maca', 'suco de uva integral',
+  'cha gelado', 'cha', 'ice tea', 'mate', 'matte', 'agua de coco', 'gatorade', 'pepsi', 'fanta uva'
+];
+
 function detectExplicitUnavailableItem(text) {
   const norm = normalizeText(text);
+
+  // 1. Bebidas indisponíveis
+  for (const b of BEBIDAS_INDISPONIVEIS) {
+    const regex = new RegExp(`\\b${b}\\b`, 'i');
+    if (regex.test(norm)) {
+      return { tipo: 'bebida', item: b };
+    }
+  }
+
+  // 2. Pratos/comidas indisponíveis
   for (const item of ITENS_INDISPONIVEIS) {
     const regex = new RegExp(`\\b${item}\\b`, 'i');
     if (regex.test(norm)) {
-      return item;
+      return { tipo: 'comida', item: item };
     }
   }
+
   return null;
 }
 
@@ -549,7 +569,6 @@ function detectMarmitas(text) {
   const norm = normalizeText(text);
   const detected = [];
 
-  // Se o cliente pedir explicitamente palavras-chave fortes do cardápio
   if (/\b(tradicional)\b/i.test(norm) || /\b(bife acebolado)\b/i.test(norm)) {
     detected.push(CARDAPIO.marmitas.find(m => m.id === 'tradicional'));
   } else if (/\b(marmita de bife|marmita de frango|frango grelhado)\b/i.test(norm) && !norm.includes('fit')) {
@@ -571,21 +590,26 @@ function detectMarmitas(text) {
   return detected.filter(Boolean);
 }
 
-// Detecção de bebidas
+// Detecção de bebidas válidas do cardápio
 function detectBebidas(text) {
   const norm = normalizeText(text);
   const detected = [];
 
-  if (/\b(coca|refrigerante|refri|guarana|fanta|sprite)\b/i.test(norm)) {
+  // Refrigerantes permitidos
+  if (/\b(coca|coca cola|refrigerante|refri|guarana|fanta|sprite)\b/i.test(norm) && !norm.includes('fanta uva') && !norm.includes('pepsi')) {
     detected.push(CARDAPIO.bebidas.find(b => b.id === 'refrigerante'));
   }
 
-  // Suco de laranja (nosso único suco do cardápio)
-  if (/\b(suco de laranja|suco natural)\b/i.test(norm) || (/\bsuco\b/i.test(norm) && !norm.includes('uva') && !norm.includes('maracuja') && !norm.includes('morango'))) {
-    detected.push(CARDAPIO.bebidas.find(b => b.id === 'suco'));
+  // Suco de laranja (nosso único suco)
+  const isJuiceOfOther = /\bsuco de\s+(uva|maracuja|morango|abacaxi|manga|goiaba|caju|acerola|maca)\b/i.test(norm);
+  if (!isJuiceOfOther) {
+    if (/\b(suco de laranja|laranja natural)\b/i.test(norm)) {
+      detected.push(CARDAPIO.bebidas.find(b => b.id === 'suco'));
+    }
   }
 
-  if (/\b(agua|agua mineral)\b/i.test(norm)) {
+  // Água
+  if (/\b(agua|agua mineral)\b/i.test(norm) && !norm.includes('agua de coco')) {
     detected.push(CARDAPIO.bebidas.find(b => b.id === 'agua'));
   }
 
@@ -606,8 +630,19 @@ function getSaudacaoContextual() {
     `• **Marmita Fit** (Arroz integral, filé e legumes) - R$ 25,00\n` +
     `• **Marmita Vegana** (Hambúrguer de grão-de-bico) - R$ 24,00\n` +
     `• **Marmita Executiva** (Picanha e tropeiro) - R$ 28,00\n\n` +
+    `🥤 **Bebidas:** Refrigerante Lata (R$ 6,00), Suco Natural de Laranja (R$ 7,00) e Água Mineral (R$ 4,00)\n` +
     `🛵 *Taxa fixa de entrega: R$ 5,00*\n\n` +
-    `Como posso ajudar você hoje? Você pode escolher um prato, personalizar ingredientes ou tirar dúvidas!`
+    `Como posso ajudar você hoje? Você pode escolher um prato, pedir uma bebida ou personalizar seu pedido!`
+  );
+}
+
+function getCardapioBebidasTexto() {
+  return (
+    `🥤 **Opções de Bebidas Disponíveis:**\n\n` +
+    `• **Refrigerante Lata** (Coca-Cola, Guaraná, Fanta, Sprite) - R$ 6,00\n` +
+    `• **Suco Natural de Laranja 300ml** (Feito na hora) - R$ 7,00\n` +
+    `• **Água Mineral 500ml** (Com ou sem gás) - R$ 4,00\n\n` +
+    `Qual dessas você gostaria de adicionar ao seu pedido?`
   );
 }
 
@@ -650,8 +685,8 @@ function processUserMessage(rawText) {
       "📌 **Comandos Úteis:**\n\n" +
       "• **Cardápio**: Veja todas as opções e valores.\n" +
       "• **Pedir [Marmita]**: Ex: *Quero 1 Marmita Executiva com carne ao ponto e sem cebola*.\n" +
+      "• **Bebidas**: Veja as opções (Refrigerante lata, Suco de Laranja e Água).\n" +
       "• **Alterar pedido**: Altere ingredientes ou troque itens do seu carrinho.\n" +
-      "• **Bebidas**: Adicione refrigerante, suco ou água.\n" +
       "• **Fechar pedido**: Ver a conta com a taxa fixa de entrega (R$ 5,00).\n" +
       "• **Cancelar / Não quero mais**: Encerra o pedido imediatamente sem insistência.\n" +
       "• **Novo chat / Reiniciar**: Começa um atendimento do zero."
@@ -667,37 +702,68 @@ function processUserMessage(rawText) {
     orderManager.reset();
   }
 
-  // ETAPA 4: Validação Rigorosa de Produtos Inexistentes no Cardápio
-  const itemIndisponivelExplicito = detectExplicitUnavailableItem(userText);
-  if (itemIndisponivelExplicito) {
-    return (
-      `❌ Desculpe, mas **não temos ${itemIndisponivelExplicito}** em nosso cardápio de hoje.\n\n` +
-      `Trabalhamos exclusivamente com nossas saborosas opções de almoço:\n` +
-      `• **Marmita Tradicional** (Bife acebolado ou frango) - R$ 22,00\n` +
-      `• **Marmita Fit** (Frango e legumes) - R$ 25,00\n` +
-      `• **Marmita Vegana** (Grão-de-bico) - R$ 24,00\n` +
-      `• **Marmita Executiva** (Picanha e tropeiro) - R$ 28,00\n\n` +
-      `Gostaria de escolher uma dessas opções disponíveis? 🍱`
-    );
+  // ETAPA 4: Solicitação Genérica de Bebidas ("quero uma bebida", "quais bebidas tem")
+  // Deve apresentar as opções para o cliente escolher, em vez de dizer que "uma bebida não está disponível"
+  const isAskingForDrinks = 
+    /^(quero|vou querer|me ve|tem|quais|ver|mostrar)?\s*(uma\s+)?(bebida|bebidas|opcoes de bebida)\??$/i.test(norm) ||
+    /\b(quais|opcoes|ver|mostrar|cardapio|lista de)\s+(as\s+)?(bebidas|bebida)\b/i.test(norm) ||
+    /^(bebida|bebidas)$/i.test(norm);
+
+  if (isAskingForDrinks) {
+    return getCardapioBebidasTexto();
   }
 
-  // Se o cliente usou verbos de pedido ("quero", "me vê", "manda", "adiciona", "marmita de...", "suco de...")
-  // mas o produto NÃO corresponde a nenhuma marmita ou bebida cadastrada
-  const isOrderingPhrase = /\b(quero|me ve|meve|vou querer|manda|desejo|pedir|adiciona|anota|comprar|traz|ve ai|marmita de|suco de)\b/i.test(norm);
+  // ETAPA 5: Validação Rigorosa de Produtos ou Bebidas Inexistentes no Cardápio
+  const indisponivel = detectExplicitUnavailableItem(userText);
+  if (indisponivel) {
+    if (indisponivel.tipo === 'bebida') {
+      return (
+        `❌ Desculpe, mas **não temos ${indisponivel.item}** disponível.\n\n` +
+        `Nossas opções de bebidas são:\n` +
+        `• **Refrigerante Lata** (Coca-Cola, Guaraná, Fanta, Sprite) - R$ 6,00\n` +
+        `• **Suco Natural de Laranja 300ml** - R$ 7,00\n` +
+        `• **Água Mineral 500ml** - R$ 4,00\n\n` +
+        `Gostaria de escolher uma dessas para acompanhar seu almoço? 🥤`
+      );
+    } else {
+      return (
+        `❌ Desculpe, mas **não temos ${indisponivel.item}** em nosso cardápio de hoje.\n\n` +
+        `Trabalhamos exclusivamente com nossas saborosas opções de almoço:\n` +
+        `• **Marmita Tradicional** (Bife acebolado ou frango) - R$ 22,00\n` +
+        `• **Marmita Fit** (Frango e legumes) - R$ 25,00\n` +
+        `• **Marmita Vegana** (Grão-de-bico) - R$ 24,00\n` +
+        `• **Marmita Executiva** (Picanha e tropeiro) - R$ 28,00\n\n` +
+        `Gostaria de escolher uma dessas opções disponíveis? 🍱`
+      );
+    }
+  }
+
+  // ETAPA 6: Se o cliente usou frases de pedido mas o item não existe nem nas marmitas nem nas bebidas
+  const isOrderingPhrase = /\b(quero|me ve|meve|vou querer|manda|desejo|pedir|adiciona|anota|comprar|traz|ve ai|marmita de|suco de|refrigerante de)\b/i.test(norm);
   const isQuestionMenu = /\b(ver|cardapio|menu|opcoes|sabores|quais|mostrar|valores|precos|tabela|ajuda)\b/i.test(norm);
   const marmitasDetectadas = detectMarmitas(userText);
   const bebidasDetectadas = detectBebidas(userText);
 
   if (isOrderingPhrase && !isQuestionMenu && marmitasDetectadas.length === 0 && bebidasDetectadas.length === 0) {
-    // Se o cliente não está apenas pedindo fechamento de conta
     if (!/\b(fechar|finalizar|conta|total|quanto deu|concluir|alterar|trocar|mudar)\b/i.test(norm)) {
-      // Extrai o que ele tentou pedir
       let itemTentado = userText.replace(/^(eu\s+)?(quero|me\s+v[eê]|vou\s+querer|manda|desejo|pedir|adiciona|anota|traz)\s+/i, '').trim();
       if (!itemTentado || itemTentado.length < 3) itemTentado = 'este produto';
 
+      // Se for algo relacionado a bebida
+      if (/suco|bebida|refri|refrigerante|cerveja|cha|drink/i.test(itemTentado)) {
+        return (
+          `❌ Desculpe, mas a bebida **"${itemTentado}" não está disponível** em nosso cardápio.\n\n` +
+          `Trabalhamos apenas com:\n` +
+          `• **Refrigerante Lata** (Coca, Guaraná, Fanta, Sprite) - R$ 6,00\n` +
+          `• **Suco Natural de Laranja 300ml** - R$ 7,00\n` +
+          `• **Água Mineral 500ml** - R$ 4,00\n\n` +
+          `Deseja adicionar uma dessas opções? 🥤`
+        );
+      }
+
       return (
         `❌ Desculpe, mas o produto **"${itemTentado}" não está disponível** em nosso cardápio de hoje.\n\n` +
-        `Nosso cardápio do dia conta com:\n` +
+        `Nosso cardápio conta com:\n` +
         `• **Marmita Tradicional** - R$ 22,00\n` +
         `• **Marmita Fit** - R$ 25,00\n` +
         `• **Marmita Vegana** - R$ 24,00\n` +
@@ -708,7 +774,7 @@ function processUserMessage(rawText) {
     }
   }
 
-  // ETAPA 5: Fluxo de Alteração de Pedido
+  // ETAPA 7: Fluxo de Alteração de Pedido
   if (orderManager.etapa === 'aguardando_alteracao') {
     const customizacoes = extractCustomizations(userText);
     const marmitasNovas = detectMarmitas(userText);
@@ -786,7 +852,7 @@ function processUserMessage(rawText) {
     );
   }
 
-  // ETAPA 6: Se estiver na etapa de finalização aguardando dados cadastrais
+  // ETAPA 8: Se estiver na etapa de finalização aguardando dados cadastrais
   if (orderManager.etapa === 'aguardando_dados') {
     let pagto = '';
     if (/pix/i.test(norm)) pagto = 'Pix';
@@ -812,7 +878,7 @@ function processUserMessage(rawText) {
     );
   }
 
-  // ETAPA 7: Adição Direta de Marmitas e Bebidas Válidas
+  // ETAPA 9: Adição Direta de Marmitas e Bebidas Válidas
   const customizacoes = extractCustomizations(userText);
   const qtd = extractQuantity(userText);
 
@@ -841,7 +907,7 @@ function processUserMessage(rawText) {
     return `Perfeito! Anotei a personalização (**${customizacoes.join(', ')}**) no seu pedido. Algo mais?`;
   }
 
-  // ETAPA 8: Fechamento de Pedido
+  // ETAPA 10: Fechamento de Pedido
   if (/\b(fechar|finalizar|conta|total|quanto deu|concluir)\b/i.test(norm)) {
     if (!orderManager.temItens()) {
       return "Você ainda não escolheu nenhum item! Gostaria de dar uma olhada no nosso cardápio antes de fechar o pedido?";
@@ -850,7 +916,7 @@ function processUserMessage(rawText) {
     return orderManager.gerarResumoPedido();
   }
 
-  // ETAPA 9: Classificação com NLP + TF-IDF + Cosseno
+  // ETAPA 11: Classificação com NLP + TF-IDF + Cosseno
   const { stems } = preprocessNLP(userText);
   const prediction = vectorizer.predictIntent(stems);
 
@@ -873,6 +939,9 @@ function processUserMessage(rawText) {
           "Qual opção você deseja escolher hoje? Você pode personalizar com 'sem cebola', 'carne bem passada', etc."
         );
 
+      case 'pedir_bebida':
+        return getCardapioBebidasTexto();
+
       case 'alterar_pedido':
         if (!orderManager.temItens()) {
           return "Seu carrinho está vazio no momento. Que tal escolher uma das nossas marmitas primeiro?";
@@ -882,9 +951,6 @@ function processUserMessage(rawText) {
 
       case 'pedir_marmita':
         return "Qual das nossas marmitas você deseja? Temos **Tradicional** (R$ 22), **Fit** (R$ 25), **Vegana** (R$ 24) e **Executiva** (R$ 28). Você também pode especificar as personalizações!";
-
-      case 'pedir_bebida':
-        return "Temos para acompanhar: **Refrigerante Lata** (R$ 6,00), **Suco Natural de Laranja 300ml** (R$ 7,00) e **Água Mineral 500ml** (R$ 4,00). Qual deseja?";
 
       case 'taxa_tempo_entrega':
         return `🛵 Nossa **taxa de entrega é fixa em R$ ${CARDAPIO.taxaEntrega.toFixed(2).replace('.', ',')}** para qualquer bairro da cidade, e o tempo estimado de entrega é de **${CARDAPIO.tempoEntrega}**!`;
@@ -900,13 +966,13 @@ function processUserMessage(rawText) {
         return orderManager.gerarResumoPedido();
 
       case 'ajuda':
-        return "Você pode me pedir para ver o cardápio, escolher sua marmita, retirar ingredientes, alterar produtos ou fechar o seu pedido a qualquer momento!";
+        return "Você pode me pedir para ver o cardápio, escolher sua marmita, retirar ingredientes, adicionar bebidas ou fechar o seu pedido a qualquer momento!";
     }
   }
 
-  // ETAPA 10: Fallback Amigável
+  // ETAPA 12: Fallback Amigável
   return (
-    "Posso ajudar com o seu pedido! 🍱 Você gostaria de ver o nosso **cardápio de hoje**, escolher uma **marmita** ou **fechar o pedido**?"
+    "Posso ajudar com o seu pedido! 🍱 Você gostaria de ver o nosso **cardápio de hoje**, escolher uma **marmita**, pedir uma **bebida** ou **fechar o pedido**?"
   );
 }
 
