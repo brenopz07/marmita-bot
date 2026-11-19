@@ -1,7 +1,7 @@
 /**
  * Marmitaria Sabor Caseiro - Motor de IA Clássica Sem LLM (Client-Side)
  * Arquitetura baseada nas especificações da aula:
- * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Validação de Cardápio, Alterações)
+ * 1. Camada de Regras Determinísticas (Saudações, Comandos, Guardrails, Validação Estrita de Cardápio, Alterações)
  * 2. Pré-processamento NLP (Normalização, Tokenização, Remoção de Stopwords, Stemming/Radicais)
  * 3. Vetorização (Bag of Words / TF-IDF)
  * 4. Decisão por Similaridade de Cosseno
@@ -43,7 +43,7 @@ const CARDAPIO = {
     }
   ],
   bebidas: [
-    { id: 'refrigerante', nome: 'Refrigerante Lata', preco: 6.00, keywords: ['refrigerante', 'refri', 'coca', 'guarana', 'lata'] },
+    { id: 'refrigerante', nome: 'Refrigerante Lata', preco: 6.00, keywords: ['refrigerante', 'refri', 'coca', 'guarana', 'lata', 'fanta', 'sprite'] },
     { id: 'suco', nome: 'Suco Natural Laranja 300ml', preco: 7.00, keywords: ['suco', 'laranja', 'natural'] },
     { id: 'agua', nome: 'Água Mineral 500ml', preco: 4.00, keywords: ['agua', 'mineral'] }
   ],
@@ -291,8 +291,8 @@ class OrderManager {
   constructor() {
     this.items = [];
     this.cliente = { nome: '', endereco: '', pagamento: '' };
-    this.etapa = 'atendimento'; // 'atendimento' | 'aguardando_alteracao' | 'aguardando_dados' | 'encerrado'
-    this.itemEmAlteracao = null; // referência ao item que está sendo alterado
+    this.etapa = 'atendimento';
+    this.itemEmAlteracao = null;
   }
 
   reset() {
@@ -319,8 +319,7 @@ class OrderManager {
     const norm = normalizeText(nomeTermo);
     const idx = this.items.findIndex(it => normalizeText(it.nome).includes(norm));
     if (idx !== -1) {
-      const removido = this.items.splice(idx, 1)[0];
-      return removido;
+      return this.items.splice(idx, 1)[0];
     }
     return null;
   }
@@ -455,7 +454,6 @@ function isOffTopicOrJailbreak(text) {
   return false;
 }
 
-// Verifica se o usuário expressou intenção de desistir/cancelar
 function isCancellationOrRefusal(text) {
   const norm = normalizeText(text);
 
@@ -489,15 +487,17 @@ function isCancellationOrRefusal(text) {
   return false;
 }
 
-// Itens comuns de restaurante que NÃO constam no cardápio de hoje
+// Lista rica de itens gastronômicos comuns que NÃO vendemos
 const ITENS_INDISPONIVEIS = [
-  'pizza', 'hamburguer artesanal', 'hamburguer tradicional', 'pastel', 'sushi', 'temaki',
-  'feijoada', 'lasanha', 'parmegiana', 'churrasco completo', 'macarronada', 'strogonoff',
+  'pizza', 'hamburguer artesanal', 'hamburguer tradicional', 'hamburguer', 'pastel', 'sushi', 'temaki',
+  'feijoada', 'lasanha', 'parmegiana', 'churrasco completo', 'churrasco', 'macarronada', 'strogonoff',
   'coxinha', 'salgado', 'acai', 'cerveja', 'chopp', 'vinho', 'whisky', 'sobremesa',
-  'pudim', 'sorvete', 'bolo', 'torta', 'yakisoba', 'peixe frito', 'camarao', 'salmao'
+  'pudim', 'sorvete', 'bolo', 'torta', 'yakisoba', 'peixe frito', 'peixe', 'camarao', 'salmao',
+  'costela', 'calabresa', 'marmita de calabresa', 'marmita de peixe', 'marmita de costela',
+  'marmita de carne moida', 'carne moida', 'cupim', 'torresmo', 'mandioca frita', 'polenta'
 ];
 
-function detectUnavailableItem(text) {
+function detectExplicitUnavailableItem(text) {
   const norm = normalizeText(text);
   for (const item of ITENS_INDISPONIVEIS) {
     const regex = new RegExp(`\\b${item}\\b`, 'i');
@@ -544,38 +544,52 @@ function extractCustomizations(text) {
   return obs;
 }
 
+// Detecção precisa de marmitas do cardápio
 function detectMarmitas(text) {
   const norm = normalizeText(text);
   const detected = [];
 
-  CARDAPIO.marmitas.forEach(m => {
-    let score = 0;
-    if (norm.includes(m.id)) score += 3;
-    m.keywords.forEach(kw => {
-      if (new RegExp(`\\b${kw}\\b`).test(norm)) score += 1;
-    });
+  // Se o cliente pedir explicitamente palavras-chave fortes do cardápio
+  if (/\b(tradicional)\b/i.test(norm) || /\b(bife acebolado)\b/i.test(norm)) {
+    detected.push(CARDAPIO.marmitas.find(m => m.id === 'tradicional'));
+  } else if (/\b(marmita de bife|marmita de frango|frango grelhado)\b/i.test(norm) && !norm.includes('fit')) {
+    detected.push(CARDAPIO.marmitas.find(m => m.id === 'tradicional'));
+  }
 
-    if (score >= 2 || norm.includes(m.id)) {
-      detected.push(m);
-    }
-  });
+  if (/\b(fit|fitness|arroz integral e legumes)\b/i.test(norm)) {
+    detected.push(CARDAPIO.marmitas.find(m => m.id === 'fit'));
+  }
 
-  return detected;
+  if (/\b(vegana|vegano|grao de bico)\b/i.test(norm)) {
+    detected.push(CARDAPIO.marmitas.find(m => m.id === 'vegana'));
+  }
+
+  if (/\b(executiva|picanha|tropeiro)\b/i.test(norm)) {
+    detected.push(CARDAPIO.marmitas.find(m => m.id === 'executiva'));
+  }
+
+  return detected.filter(Boolean);
 }
 
+// Detecção de bebidas
 function detectBebidas(text) {
   const norm = normalizeText(text);
   const detected = [];
 
-  CARDAPIO.bebidas.forEach(b => {
-    let found = false;
-    b.keywords.forEach(kw => {
-      if (new RegExp(`\\b${kw}\\b`).test(norm)) found = true;
-    });
-    if (found) detected.push(b);
-  });
+  if (/\b(coca|refrigerante|refri|guarana|fanta|sprite)\b/i.test(norm)) {
+    detected.push(CARDAPIO.bebidas.find(b => b.id === 'refrigerante'));
+  }
 
-  return detected;
+  // Suco de laranja (nosso único suco do cardápio)
+  if (/\b(suco de laranja|suco natural)\b/i.test(norm) || (/\bsuco\b/i.test(norm) && !norm.includes('uva') && !norm.includes('maracuja') && !norm.includes('morango'))) {
+    detected.push(CARDAPIO.bebidas.find(b => b.id === 'suco'));
+  }
+
+  if (/\b(agua|agua mineral)\b/i.test(norm)) {
+    detected.push(CARDAPIO.bebidas.find(b => b.id === 'agua'));
+  }
+
+  return detected.filter(Boolean);
 }
 
 function getSaudacaoContextual() {
@@ -649,32 +663,56 @@ function processUserMessage(rawText) {
     return getSaudacaoContextual();
   }
 
-  // Se o atendimento anterior tiver sido encerrado e o cliente voltar a falar
   if (orderManager.etapa === 'encerrado') {
     orderManager.reset();
   }
 
-  // ETAPA 4: Validação de Pedido de Produto Inexistente no Cardápio
-  const itemIndisponivel = detectUnavailableItem(userText);
-  if (itemIndisponivel) {
+  // ETAPA 4: Validação Rigorosa de Produtos Inexistentes no Cardápio
+  const itemIndisponivelExplicito = detectExplicitUnavailableItem(userText);
+  if (itemIndisponivelExplicito) {
     return (
-      `❌ Desculpe, mas não temos **${itemIndisponivel}** disponível em nosso cardápio de hoje.\n\n` +
-      `Trabalhamos exclusivamente com nossas deliciosas opções de almoço caseiro:\n` +
-      `• **Marmita Tradicional** (R$ 22,00)\n` +
-      `• **Marmita Fit** (R$ 25,00)\n` +
-      `• **Marmita Vegana** (R$ 24,00)\n` +
-      `• **Marmita Executiva** (R$ 28,00)\n\n` +
-      `Gostaria de escolher uma dessas opções para a sua refeição? 🍱`
+      `❌ Desculpe, mas **não temos ${itemIndisponivelExplicito}** em nosso cardápio de hoje.\n\n` +
+      `Trabalhamos exclusivamente com nossas saborosas opções de almoço:\n` +
+      `• **Marmita Tradicional** (Bife acebolado ou frango) - R$ 22,00\n` +
+      `• **Marmita Fit** (Frango e legumes) - R$ 25,00\n` +
+      `• **Marmita Vegana** (Grão-de-bico) - R$ 24,00\n` +
+      `• **Marmita Executiva** (Picanha e tropeiro) - R$ 28,00\n\n` +
+      `Gostaria de escolher uma dessas opções disponíveis? 🍱`
     );
   }
 
+  // Se o cliente usou verbos de pedido ("quero", "me vê", "manda", "adiciona", "marmita de...", "suco de...")
+  // mas o produto NÃO corresponde a nenhuma marmita ou bebida cadastrada
+  const isOrderingPhrase = /\b(quero|me ve|meve|vou querer|manda|desejo|pedir|adiciona|anota|comprar|traz|ve ai|marmita de|suco de)\b/i.test(norm);
+  const isQuestionMenu = /\b(ver|cardapio|menu|opcoes|sabores|quais|mostrar|valores|precos|tabela|ajuda)\b/i.test(norm);
+  const marmitasDetectadas = detectMarmitas(userText);
+  const bebidasDetectadas = detectBebidas(userText);
+
+  if (isOrderingPhrase && !isQuestionMenu && marmitasDetectadas.length === 0 && bebidasDetectadas.length === 0) {
+    // Se o cliente não está apenas pedindo fechamento de conta
+    if (!/\b(fechar|finalizar|conta|total|quanto deu|concluir|alterar|trocar|mudar)\b/i.test(norm)) {
+      // Extrai o que ele tentou pedir
+      let itemTentado = userText.replace(/^(eu\s+)?(quero|me\s+v[eê]|vou\s+querer|manda|desejo|pedir|adiciona|anota|traz)\s+/i, '').trim();
+      if (!itemTentado || itemTentado.length < 3) itemTentado = 'este produto';
+
+      return (
+        `❌ Desculpe, mas o produto **"${itemTentado}" não está disponível** em nosso cardápio de hoje.\n\n` +
+        `Nosso cardápio do dia conta com:\n` +
+        `• **Marmita Tradicional** - R$ 22,00\n` +
+        `• **Marmita Fit** - R$ 25,00\n` +
+        `• **Marmita Vegana** - R$ 24,00\n` +
+        `• **Marmita Executiva** - R$ 28,00\n` +
+        `• **Bebidas:** Refrigerante Lata, Suco Natural de Laranja e Água Mineral.\n\n` +
+        `Qual dessas opções você gostaria de experimentar hoje? 🍱`
+      );
+    }
+  }
+
   // ETAPA 5: Fluxo de Alteração de Pedido
-  // Caso A: Se o bot estiver aguardando o cliente especificar o que quer alterar
   if (orderManager.etapa === 'aguardando_alteracao') {
     const customizacoes = extractCustomizations(userText);
     const marmitasNovas = detectMarmitas(userText);
 
-    // Se o cliente mencionou uma nova marmita para substituir
     if (marmitasNovas.length > 0) {
       if (orderManager.itemEmAlteracao) {
         orderManager.removerItemPorNome(orderManager.itemEmAlteracao.nome);
@@ -689,7 +727,6 @@ function processUserMessage(rawText) {
       );
     }
 
-    // Se o cliente especificou apenas alterações de ingredientes (ex: sem cebola, carne bem passada)
     if (customizacoes.length > 0) {
       const alvo = orderManager.itemEmAlteracao || orderManager.items[orderManager.items.length - 1];
       if (alvo) {
@@ -703,16 +740,9 @@ function processUserMessage(rawText) {
       }
     }
 
-    // Se o cliente quiser remover ou trocar tudo
-    if (/trocar|mudar|remover|tirar/i.test(norm)) {
-      orderManager.etapa = 'atendimento';
-      return `Claro! O que você gostaria de retirar ou adicionar? Nossas opções são: Tradicional, Fit, Vegana e Executiva.`;
-    }
-
     orderManager.etapa = 'atendimento';
   }
 
-  // Caso B: O cliente pediu para alterar / mudar um produto
   const solicitouAlteracao = /\b(alterar|mudar|modificar|trocar|troca)\b/i.test(norm);
   if (solicitouAlteracao) {
     if (!orderManager.temItens()) {
@@ -722,13 +752,11 @@ function processUserMessage(rawText) {
       );
     }
 
-    // Verifica se o cliente mencionou um produto específico para alterar (ex: "quero alterar a executiva")
     const marmitasMencionadas = detectMarmitas(userText);
     const bebidasMencionadas = detectBebidas(userText);
     const itemMencionado = marmitasMencionadas[0] || bebidasMencionadas[0];
 
     if (itemMencionado) {
-      // Verifica se esse produto está no carrinho
       const itemNoCarrinho = orderManager.encontrarItemPorNome(itemMencionado.nome);
       if (!itemNoCarrinho) {
         return (
@@ -749,7 +777,6 @@ function processUserMessage(rawText) {
       }
     }
 
-    // Se pediu para alterar genericamente sem especificar o item
     orderManager.etapa = 'aguardando_alteracao';
     orderManager.itemEmAlteracao = orderManager.items[orderManager.items.length - 1];
     return (
@@ -785,16 +812,14 @@ function processUserMessage(rawText) {
     );
   }
 
-  // ETAPA 7: Detecção de Itens do Pedido (Adição direta)
-  const marmitasAchadas = detectMarmitas(userText);
-  const bebidasAchadas = detectBebidas(userText);
+  // ETAPA 7: Adição Direta de Marmitas e Bebidas Válidas
   const customizacoes = extractCustomizations(userText);
   const qtd = extractQuantity(userText);
 
-  if (marmitasAchadas.length > 0 || bebidasAchadas.length > 0) {
+  if (marmitasDetectadas.length > 0 || bebidasDetectadas.length > 0) {
     let feedback = '';
 
-    marmitasAchadas.forEach(m => {
+    marmitasDetectadas.forEach(m => {
       const item = orderManager.adicionarItem(m.nome, m.preco, 'marmita', qtd, customizacoes);
       feedback += `✅ Adicionado: **${item.qtd}x ${item.nome}** (R$ ${(item.preco * item.qtd).toFixed(2).replace('.', ',')})\n`;
       if (item.obs.length > 0) {
@@ -802,7 +827,7 @@ function processUserMessage(rawText) {
       }
     });
 
-    bebidasAchadas.forEach(b => {
+    bebidasDetectadas.forEach(b => {
       const item = orderManager.adicionarItem(b.nome, b.preco, 'bebida', qtd);
       feedback += `🥤 Adicionado: **${item.qtd}x ${item.nome}** (R$ ${(item.preco * item.qtd).toFixed(2).replace('.', ',')})\n`;
     });
