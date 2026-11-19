@@ -746,7 +746,7 @@ function processUserMessage(rawText) {
   const isQuestionMenu = /\b(ver|cardapio|menu|opcoes|sabores|quais|mostrar|valores|precos|tabela|ajuda)\b/i.test(norm);
 
   if (isOrderingPhrase && !isQuestionMenu && marmitasDetectadas.length === 0 && bebidasDetectadas.length === 0) {
-    if (!/\b(fechar|finalizar|conta|total|quanto deu|concluir|alterar|trocar|mudar)\b/i.test(norm)) {
+    if (!/\b(fechar|finalizar|conta|total|quanto deu|concluir|alterar|trocar|mudar|remover|tirar|excluir|deletar)\b/i.test(norm)) {
       let itemTentado = userText.replace(/^(eu\s+)?(quero|me\s+v[eê]|vou\s+querer|manda|desejo|pedir|adiciona|anota|traz)\s+/i, '').trim();
       if (!itemTentado || itemTentado.length < 3) itemTentado = 'este produto';
 
@@ -775,7 +775,64 @@ function processUserMessage(rawText) {
     }
   }
 
-  // ETAPA 7: Fluxo de Alteração de Pedido
+  // ETAPA 7: Fluxo de Remoção de Itens do Pedido
+  const solicitouRemocao = /\b(remover|tirar|excluir|deletar|retirar)\b/i.test(norm) && !/sem\s+(cebola|salada|feijao|pimenta|sal)/i.test(norm);
+  if (solicitouRemocao) {
+    if (!orderManager.temItens()) {
+      return (
+        "⚠️ Seu **carrinho já está vazio**, não há itens para remover!\n\n" +
+        "Gostaria de dar uma olhada em nosso cardápio para adicionar uma marmita?"
+      );
+    }
+
+    // Se o cliente pediu para remover tudo ou limpar o carrinho
+    if (/\b(tudo|todos|carrinho|pedido inteiro)\b/i.test(norm)) {
+      orderManager.reset();
+      return (
+        "🗑️ Todos os itens foram removidos do seu pedido! O carrinho está vazio.\n\n" +
+        "Deseja escolher um novo prato do nosso cardápio?"
+      );
+    }
+
+    // Verifica se mencionou um item específico para remover
+    const marmitasMencionadas = detectMarmitas(userText);
+    const bebidasMencionadas = detectBebidas(userText);
+    const itemMencionado = marmitasMencionadas[0] || bebidasMencionadas[0];
+
+    if (itemMencionado) {
+      const removido = orderManager.removerItemPorNome(itemMencionado.nome);
+      if (removido) {
+        if (!orderManager.temItens()) {
+          return (
+            `🗑️ **${removido.nome}** foi removido do seu pedido com sucesso!\n\n` +
+            `Seu carrinho agora está vazio. Gostaria de escolher outra opção do cardápio? 🍱`
+          );
+        } else {
+          return (
+            `🗑️ **${removido.nome}** foi removido do seu pedido!\n\n` +
+            `Itens restantes no seu carrinho:\n${orderManager.listarItensFormatados()}\n\n` +
+            `• **Novo Total:** R$ ${orderManager.calcularTotal().toFixed(2).replace('.', ',')} *(com taxa inclusa)*\n\n` +
+            `Deseja adicionar algo mais ou podemos **fechar o pedido**?`
+          );
+        }
+      } else {
+        return (
+          `⚠️ **Atenção:** Você solicitou remover **${itemMencionado.nome}**, mas este item **não está no seu pedido**!\n\n` +
+          `Itens atualmente no seu carrinho:\n${orderManager.listarItensFormatados()}\n\n` +
+          `Qual deles você deseja remover?`
+        );
+      }
+    } else {
+      // Se não especificou qual item quer remover, mostra a lista para ele escolher
+      return (
+        `Qual item você deseja remover do seu pedido?\n\n` +
+        `Itens no seu carrinho:\n${orderManager.listarItensFormatados()}\n\n` +
+        `Você pode me dizer, por exemplo: *Remover ${orderManager.items[0].nome}* ou *Remover tudo*.`
+      );
+    }
+  }
+
+  // ETAPA 8: Fluxo de Alteração de Pedido
   if (orderManager.etapa === 'aguardando_alteracao') {
     const customizacoes = extractCustomizations(userText);
     const marmitasNovas = detectMarmitas(userText);
