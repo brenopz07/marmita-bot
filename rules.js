@@ -702,12 +702,15 @@ function processUserMessage(rawText) {
     orderManager.reset();
   }
 
-  // ETAPA 4: Solicitação Genérica de Bebidas ("quero uma bebida", "quais bebidas tem")
-  // Deve apresentar as opções para o cliente escolher, em vez de dizer que "uma bebida não está disponível"
+  // ETAPA 4: Solicitação Genérica de Bebidas ("bebida", "quero uma bebida", "quero adicionar bebida ao meu pedido")
+  const marmitasDetectadas = detectMarmitas(userText);
+  const bebidasDetectadas = detectBebidas(userText);
+
   const isAskingForDrinks = 
-    /^(quero|vou querer|me ve|tem|quais|ver|mostrar)?\s*(uma\s+)?(bebida|bebidas|opcoes de bebida)\??$/i.test(norm) ||
-    /\b(quais|opcoes|ver|mostrar|cardapio|lista de)\s+(as\s+)?(bebidas|bebida)\b/i.test(norm) ||
-    /^(bebida|bebidas)$/i.test(norm);
+    /\bbebidas?\b/i.test(norm) &&
+    marmitasDetectadas.length === 0 &&
+    bebidasDetectadas.length === 0 &&
+    !detectExplicitUnavailableItem(userText);
 
   if (isAskingForDrinks) {
     return getCardapioBebidasTexto();
@@ -741,8 +744,6 @@ function processUserMessage(rawText) {
   // ETAPA 6: Se o cliente usou frases de pedido mas o item não existe nem nas marmitas nem nas bebidas
   const isOrderingPhrase = /\b(quero|me ve|meve|vou querer|manda|desejo|pedir|adiciona|anota|comprar|traz|ve ai|marmita de|suco de|refrigerante de)\b/i.test(norm);
   const isQuestionMenu = /\b(ver|cardapio|menu|opcoes|sabores|quais|mostrar|valores|precos|tabela|ajuda)\b/i.test(norm);
-  const marmitasDetectadas = detectMarmitas(userText);
-  const bebidasDetectadas = detectBebidas(userText);
 
   if (isOrderingPhrase && !isQuestionMenu && marmitasDetectadas.length === 0 && bebidasDetectadas.length === 0) {
     if (!/\b(fechar|finalizar|conta|total|quanto deu|concluir|alterar|trocar|mudar)\b/i.test(norm)) {
